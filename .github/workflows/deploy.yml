@@ -5,7 +5,21 @@ on:
     branches: [main]
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Load modules (catch schema/decorator errors)
+        run: node -e "require('reflect-metadata'); require('./dist/app.module')"
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: SSH and deploy
@@ -16,11 +30,23 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             cd /var/www/metus-zalo-be
+            rm -rf dist.backup
             cp -r dist dist.backup 2>/dev/null || true
             git pull origin main
             npm ci
-            npm run build || (mv dist.backup dist && pm2 restart metus-zalo-api && exit 1)
+            npm run build || (rm -rf dist && mv dist.backup dist && pm2 restart metus-zalo-api && exit 1)
             pm2 reload metus-zalo-api
+            ok=0
+            for i in $(seq 1 12); do
+              sleep 5
+              if curl -fsS http://localhost:4100/api/health >/dev/null; then ok=1; break; fi
+            done
+            if [ "$ok" != "1" ]; then
+              echo "Health check failed, rolling back"
+              rm -rf dist && mv dist.backup dist && pm2 restart metus-zalo-api
+              exit 1
+            fi
             pm2 save
-            echo "✅ Deploy BE completed successfully!"
+            echo "Deploy BE completed successfully!"
