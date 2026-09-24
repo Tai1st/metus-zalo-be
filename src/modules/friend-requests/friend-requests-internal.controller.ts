@@ -45,6 +45,8 @@ export class FriendRequestsInternalController {
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.requests.remove(Number(id)).then(() => ({ removed: Number(id) }));
+    return this.requests
+      .remove(Number(id))
+      .then(() => ({ removed: Number(id) }));
   }
 }

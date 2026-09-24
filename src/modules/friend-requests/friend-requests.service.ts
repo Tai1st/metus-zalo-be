@@ -82,10 +82,7 @@ export class FriendRequestsService {
     });
   }
 
-  async setStatus(
-    id: number,
-    status: 'accepted' | 'rejected',
-  ): Promise<void> {
+  async setStatus(id: number, status: 'accepted' | 'rejected'): Promise<void> {
     await this.model.updateOne(
       { seq: id },
       { status, updatedAt: new Date().toISOString() },

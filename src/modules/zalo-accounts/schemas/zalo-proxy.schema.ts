@@ -9,7 +9,12 @@ export class ZaloProxy {
   @Prop({ default: '' })
   label: string;
 
-  @Prop({ type: String, required: true, enum: ['http', 'socks5'], default: 'http' })
+  @Prop({
+    type: String,
+    required: true,
+    enum: ['http', 'socks5'],
+    default: 'http',
+  })
   protocol: 'http' | 'socks5';
 
   @Prop({ required: true })

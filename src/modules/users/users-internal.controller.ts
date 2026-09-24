@@ -16,10 +16,7 @@ export class UsersInternalController {
   constructor(private readonly users: UsersService) {}
 
   @Post(':id/zalo-ids')
-  async grantZaloId(
-    @Param('id') id: string,
-    @Body('zaloId') zaloId: string,
-  ) {
+  async grantZaloId(@Param('id') id: string, @Body('zaloId') zaloId: string) {
     await this.users.addOwnZaloId(id, zaloId);
     return { ok: true };
   }

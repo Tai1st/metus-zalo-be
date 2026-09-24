@@ -42,13 +42,21 @@ export class CampaignsInternalController {
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCampaignDto) {
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateCampaignDto,
+  ) {
     return this.campaigns.update(id, dto);
   }
 
   @Patch(':id/status')
-  updateStatus(@Param('id', ParseIntPipe) id: number, @Body() dto: CampaignStatusDto) {
-    return this.campaigns.updateStatus(id, dto.status).then(() => ({ ok: true }));
+  updateStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CampaignStatusDto,
+  ) {
+    return this.campaigns
+      .updateStatus(id, dto.status)
+      .then(() => ({ ok: true }));
   }
 
   @Post(':id/reset')
@@ -57,7 +65,10 @@ export class CampaignsInternalController {
   }
 
   @Patch(':id/counters')
-  bumpCounters(@Param('id', ParseIntPipe) id: number, @Body() dto: BumpCountersDto) {
+  bumpCounters(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: BumpCountersDto,
+  ) {
     return this.campaigns.bumpCounters(id, dto.ok).then(() => ({ ok: true }));
   }
 
@@ -72,7 +83,10 @@ export class CampaignsInternalController {
   }
 
   @Get(':id/logs')
-  listLogs(@Param('id', ParseIntPipe) id: number, @Query('limit') limit?: string) {
+  listLogs(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('limit') limit?: string,
+  ) {
     return this.campaigns.listLogs(id, Number(limit) || 200);
   }
 
@@ -85,7 +99,10 @@ export class CampaignsInternalController {
   }
 
   @Get(':id/logs/count-since')
-  countSentSince(@Param('id', ParseIntPipe) id: number, @Query('since') since: string) {
+  countSentSince(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('since') since: string,
+  ) {
     return this.campaigns
       .countSentSince(id, since)
       .then((count) => ({ count }));

@@ -1,5 +1,10 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsString, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 
 class ThreadNameItemDto {
   @IsString() id: string;

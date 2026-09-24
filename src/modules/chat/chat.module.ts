@@ -20,6 +20,10 @@ import { ChatInternalController } from './chat-internal.controller';
     ]),
   ],
   controllers: [ChatInternalController],
-  providers: [ChatMessagesService, ThreadNamesService, NotificationStateService],
+  providers: [
+    ChatMessagesService,
+    ThreadNamesService,
+    NotificationStateService,
+  ],
 })
 export class ChatModule {}

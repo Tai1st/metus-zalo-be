@@ -12,7 +12,11 @@ import {
 import { Public } from '../../common/decorators/public.decorator';
 import { InternalKeyGuard } from '../../common/internal-key.guard';
 import { SchedulesService } from './schedules.service';
-import { MarkRanDto, ScheduleInputDto, UpdateScheduleDto } from './dto/schedule-input.dto';
+import {
+  MarkRanDto,
+  ScheduleInputDto,
+  UpdateScheduleDto,
+} from './dto/schedule-input.dto';
 
 @Public()
 @UseGuards(InternalKeyGuard)
@@ -36,7 +40,10 @@ export class SchedulesInternalController {
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateScheduleDto) {
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateScheduleDto,
+  ) {
     return this.schedules.update(id, dto);
   }
 

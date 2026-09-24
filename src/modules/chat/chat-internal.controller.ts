@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { InternalKeyGuard } from '../../common/internal-key.guard';
 import { ChatMessagesService } from './chat-messages.service';
@@ -41,7 +49,10 @@ export class ChatInternalController {
   }
 
   @Get('messages/thread')
-  threadMessages(@Query('zaloId') zaloId: string, @Query('threadId') threadId: string) {
+  threadMessages(
+    @Query('zaloId') zaloId: string,
+    @Query('threadId') threadId: string,
+  ) {
     return this.messages.threadMessages(zaloId, threadId);
   }
 
@@ -77,7 +88,10 @@ export class ChatInternalController {
   }
 
   @Get('thread-names/one')
-  getThreadName(@Query('zaloId') zaloId: string, @Query('threadId') threadId: string) {
+  getThreadName(
+    @Query('zaloId') zaloId: string,
+    @Query('threadId') threadId: string,
+  ) {
     return this.threadNames.get(zaloId, threadId).then((name) => ({ name }));
   }
 

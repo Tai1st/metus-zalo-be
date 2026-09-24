@@ -14,4 +14,5 @@ export class NotificationState {
 }
 
 export type NotificationStateDocument = HydratedDocument<NotificationState>;
-export const NotificationStateSchema = SchemaFactory.createForClass(NotificationState);
+export const NotificationStateSchema =
+  SchemaFactory.createForClass(NotificationState);

@@ -55,9 +55,6 @@ export class ChatMessage {
 
 export type ChatMessageDocument = HydratedDocument<ChatMessage>;
 export const ChatMessageSchema = SchemaFactory.createForClass(ChatMessage);
-ChatMessageSchema.index(
-  { zaloId: 1, threadId: 1, msgId: 1 },
-  { unique: true },
-);
+ChatMessageSchema.index({ zaloId: 1, threadId: 1, msgId: 1 }, { unique: true });
 ChatMessageSchema.index({ zaloId: 1, threadId: 1, ts: -1 });
 ChatMessageSchema.index({ zaloId: 1, ts: -1 });

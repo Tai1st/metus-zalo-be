@@ -3,7 +3,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { CounterService } from '../../common/counter.service';
 import { Campaign, CampaignDocument } from './schemas/campaign.schema';
-import { CampaignLog, CampaignLogDocument } from './schemas/campaign-log.schema';
+import {
+  CampaignLog,
+  CampaignLogDocument,
+} from './schemas/campaign-log.schema';
 import { CreateCampaignDto, UpdateCampaignDto } from './dto/campaign-input.dto';
 import { AddLogDto } from './dto/add-log.dto';
 
@@ -159,7 +162,10 @@ export class CampaignsService {
     });
   }
 
-  async listLogs(campaignId: number, limit: number): Promise<CampaignLogPublic[]> {
+  async listLogs(
+    campaignId: number,
+    limit: number,
+  ): Promise<CampaignLogPublic[]> {
     const rows = await this.logModel
       .find({ campaignId })
       .sort({ seq: -1 })

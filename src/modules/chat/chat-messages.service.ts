@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { ChatMessage, ChatMessageDocument } from './schemas/chat-message.schema';
+import {
+  ChatMessage,
+  ChatMessageDocument,
+} from './schemas/chat-message.schema';
 
 export type LiveMessagePublic = {
   id: string;
@@ -70,7 +73,10 @@ export class ChatMessagesService {
     }
   }
 
-  async threadMessages(zaloId: string, threadId: string): Promise<LiveMessagePublic[]> {
+  async threadMessages(
+    zaloId: string,
+    threadId: string,
+  ): Promise<LiveMessagePublic[]> {
     const rows = await this.model
       .find({ zaloId, threadId })
       .sort({ ts: -1 })
@@ -80,7 +86,10 @@ export class ChatMessagesService {
 
   /** Latest N raw rows for an account (any thread), newest first. */
   async recent(zaloId: string, limit: number): Promise<LiveMessagePublic[]> {
-    const rows = await this.model.find({ zaloId }).sort({ ts: -1 }).limit(limit);
+    const rows = await this.model
+      .find({ zaloId })
+      .sort({ ts: -1 })
+      .limit(limit);
     return rows.map((r) => this.toPublic(r));
   }
 
@@ -94,7 +103,9 @@ export class ChatMessagesService {
     return out;
   }
 
-  async lastMessagePreviews(zaloId: string): Promise<Record<string, LiveMessagePublic>> {
+  async lastMessagePreviews(
+    zaloId: string,
+  ): Promise<Record<string, LiveMessagePublic>> {
     const rows = await this.model.aggregate<ChatMessageDocument>([
       { $match: { zaloId } },
       { $sort: { ts: -1 } },
@@ -107,6 +118,10 @@ export class ChatMessagesService {
   }
 
   async unreadCountSince(zaloId: string, sinceTs: number): Promise<number> {
-    return this.model.countDocuments({ zaloId, isSelf: false, ts: { $gt: sinceTs } });
+    return this.model.countDocuments({
+      zaloId,
+      isSelf: false,
+      ts: { $gt: sinceTs },
+    });
   }
 }
