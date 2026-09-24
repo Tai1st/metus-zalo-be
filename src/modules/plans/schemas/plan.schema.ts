@@ -46,6 +46,14 @@ export class Plan {
   @Prop({ default: false })
   isPopular: boolean;
 
+  /** Exact length in days; overrides the calendar-month length (trial = 30). */
+  @Prop({ default: null })
+  durationDays: number | null;
+
+  /** Hidden plans (e.g. trial) are only granted by an admin, never listed or bought. */
+  @Prop({ default: true })
+  isPublic: boolean;
+
   /** Inactive plans stay for existing subscribers but cannot be bought. */
   @Prop({ default: true })
   isActive: boolean;

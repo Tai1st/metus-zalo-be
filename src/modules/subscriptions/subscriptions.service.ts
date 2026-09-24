@@ -53,9 +53,9 @@ export class SubscriptionsService implements OnModuleInit {
    * starts `pending`: an admin activates it once payment is confirmed (there
    * is no payment gateway yet).
    */
-  async subscribe(userId: string, dto: SubscribeDto) {
+  async subscribe(userId: string, dto: SubscribeDto, byAdmin = false) {
     const plan = await this.plans.get(dto.planId);
-    if (!plan.isActive) {
+    if (!plan.isActive || (plan.isPublic === false && !byAdmin)) {
       throw new BadRequestException('Gói cước này đã ngừng bán');
     }
     const planPrice = priceFor(plan.prices, dto.months);
@@ -116,6 +116,7 @@ export class SubscriptionsService implements OnModuleInit {
           planCode: plan.code,
           planName: plan.name,
           months: dto.months,
+          days: plan.durationDays ?? null,
           planPrice,
           addon,
           totalPrice: planPrice + (addon?.price ?? 0),
@@ -241,7 +242,9 @@ export class SubscriptionsService implements OnModuleInit {
       const now = new Date();
       sub.status = SubscriptionStatus.Active;
       sub.startedAt = now;
-      sub.expiresAt = addMonths(now, sub.snapshot.months);
+      sub.expiresAt = sub.snapshot.days
+        ? new Date(now.getTime() + sub.snapshot.days * 86_400_000)
+        : addMonths(now, sub.snapshot.months);
       return await sub.save();
     } catch (e) {
       if (isDuplicateKey(e)) {
@@ -255,7 +258,7 @@ export class SubscriptionsService implements OnModuleInit {
 
   /** Admin gives a customer a plan directly: created and activated at once. */
   async grant(userId: string, dto: SubscribeDto) {
-    const sub = await this.subscribe(userId, dto);
+    const sub = await this.subscribe(userId, dto, true);
     if (sub.status !== SubscriptionStatus.Pending) return sub;
     return this.activate(String(sub._id));
   }

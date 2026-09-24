@@ -11,7 +11,7 @@ import { Model } from 'mongoose';
 import { Plan, PlanDocument } from './schemas/plan.schema';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
-import { DEFAULT_PLANS } from './plans.seed';
+import { DEFAULT_PLANS, TRIAL_PLAN } from './plans.seed';
 import { hasDuplicateMonths } from '../../common/pricing';
 
 @Injectable()
@@ -23,13 +23,18 @@ export class PlansService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    if ((await this.model.estimatedDocumentCount()) > 0) return;
-    await this.model.insertMany(DEFAULT_PLANS);
-    this.log.log(`Đã tạo ${DEFAULT_PLANS.length} gói cước mặc định`);
+    if ((await this.model.estimatedDocumentCount()) === 0) {
+      await this.model.insertMany(DEFAULT_PLANS);
+      this.log.log(`Đã tạo ${DEFAULT_PLANS.length} gói cước mặc định`);
+    }
+    if (!(await this.model.exists({ code: TRIAL_PLAN.code }))) {
+      await this.model.create(TRIAL_PLAN);
+      this.log.log('Đã tạo gói dùng thử (trial)');
+    }
   }
 
   listActive() {
-    return this.model.find({ isActive: true }).sort({ sortOrder: 1 });
+    return this.model.find({ isActive: true, isPublic: { $ne: false } }).sort({ sortOrder: 1 });
   }
 
   listAll() {

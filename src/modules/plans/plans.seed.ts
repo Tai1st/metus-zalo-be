@@ -48,3 +48,17 @@ export const DEFAULT_PLANS: CreatePlanDto[] = [
     sortOrder: 2,
   },
 ];
+
+/** Hidden 30-day trial: admin grants it to a customer, it is never listed or bought. */
+export const TRIAL_PLAN: CreatePlanDto = {
+  code: 'trial',
+  name: 'Trial',
+  tagline: 'Dùng thử 30 ngày',
+  description: 'Gói dùng thử miễn phí do quản trị viên cấp.',
+  prices: [{ months: 1, price: 0 }],
+  maxUsers: 1,
+  features: ['1 tài khoản sử dụng', 'Truy cập toàn bộ tính năng', 'Dùng thử 30 ngày'],
+  isPublic: false,
+  durationDays: 30,
+  sortOrder: 99,
+};

@@ -65,6 +65,15 @@ export class CreatePlanDto {
   isActive?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  durationDays?: number;
+
+  @IsOptional()
   @IsInt()
   sortOrder?: number;
 }
