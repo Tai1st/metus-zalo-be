@@ -16,6 +16,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Load modules (catch schema/decorator errors)
+        env:
+          MONGODB_URI: mongodb://localhost:27017/ci
+          JWT_SECRET: ci-only-jwt-secret-at-least-32-characters
+          COOKIE_SECRET: ci-only-cookie-secret-at-least-32-chars
+          INTERNAL_KEY: ci-only-internal-key
         run: node -e "require('reflect-metadata'); require('./dist/app.module')"
 
   deploy:
