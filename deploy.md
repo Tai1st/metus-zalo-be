@@ -4,7 +4,7 @@ Runbook triển khai hạ tầng cho **Metus Zalo** (FE Next.js + BE NestJS + Mo
 
 **Stack**: Ubuntu 24.04 · Node.js 20 LTS · MongoDB 8 · Nginx · PM2 · Certbot · GitHub Actions
 
-Domain FE: `zalo.metus.vn`.
+Domain FE: `zalo.metus.vn`. Domain BE: `api-v3.metus.vn`.
 
 ---
 
