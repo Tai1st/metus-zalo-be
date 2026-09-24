@@ -5,6 +5,7 @@ import {
   ConflictException,
   NotFoundException,
   Param,
+  HttpCode,
   Patch,
   Post,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ import { Role } from '../../common/enums/role.enum';
 import { UsersService } from './users.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
+import { ResetEmployeePasswordDto } from './dto/reset-employee-password.dto';
 import { SetActiveDto } from './dto/set-active.dto';
 
 /**
@@ -57,6 +59,18 @@ export class CustomersController {
       throw new ConflictException('Tên đăng nhập đã được sử dụng');
     }
     return (await this.users.create({ ...dto, role: Role.User })).toJSON();
+  }
+
+  @HttpCode(200)
+  @Patch(':id/password')
+  async resetPassword(
+    @Param('id') id: string,
+    @Body() dto: ResetEmployeePasswordDto,
+  ) {
+    const user = await this.users.getCustomer(id);
+    if (!user) throw new NotFoundException('Không tìm thấy khách hàng');
+    await this.users.setPassword(id, dto.newPassword);
+    return { ok: true };
   }
 
   @Patch(':id/active')
