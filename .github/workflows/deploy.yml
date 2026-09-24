@@ -1,0 +1,26 @@
+name: Deploy BE
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /var/www/metus-zalo-be
+            cp -r dist dist.backup 2>/dev/null || true
+            git pull origin main
+            npm ci
+            npm run build || (mv dist.backup dist && pm2 restart metus-zalo-api && exit 1)
+            pm2 reload metus-zalo-api
+            pm2 save
+            echo "✅ Deploy BE completed successfully!"
