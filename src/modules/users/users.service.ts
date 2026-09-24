@@ -67,6 +67,44 @@ export class UsersService implements OnModuleInit {
     return this.model.find({ role: Role.Staff }).sort({ username: 1 });
   }
 
+  /** Khách hàng (role User) — tài khoản mua gói, tách khỏi Staff/Admin. */
+  listCustomers() {
+    return this.model.find({ role: Role.User }).sort({ createdAt: -1 });
+  }
+
+  async getCustomer(id: string) {
+    const user = await this.model.findById(id);
+    return user && user.role === Role.User ? user : null;
+  }
+
+  async setCustomerActive(id: string, isActive: boolean) {
+    const user = await this.getCustomer(id);
+    if (!user) return null;
+    user.isActive = isActive;
+    await user.save();
+    return user;
+  }
+
+  countCustomers() {
+    return this.model.countDocuments({ role: Role.User });
+  }
+
+  /** New customer signups per day, oldest first — for the admin dashboard. */
+  async customerSignupsByDay(days: number) {
+    const since = new Date(Date.now() - days * 86_400_000);
+    const rows = await this.model.aggregate<{ _id: string; count: number }>([
+      { $match: { role: Role.User, createdAt: { $gte: since.toISOString() } } },
+      {
+        $group: {
+          _id: { $substrCP: ['$createdAt', 0, 10] },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+    return rows.map((r) => ({ date: r._id, count: r.count }));
+  }
+
   async update(
     id: string,
     input: {
@@ -91,7 +129,10 @@ export class UsersService implements OnModuleInit {
    * with, so a non-admin can use what they just created without an admin
    * having to edit their permissions afterwards. */
   async addOwnZaloId(id: string, zaloId: string) {
-    await this.model.updateOne({ _id: id }, { $addToSet: { allowedZaloIds: zaloId } });
+    await this.model.updateOne(
+      { _id: id },
+      { $addToSet: { allowedZaloIds: zaloId } },
+    );
   }
 
   async remove(id: string) {

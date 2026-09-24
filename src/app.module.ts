@@ -19,6 +19,7 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { SchedulesModule } from './modules/schedules/schedules.module';
 import { LeadsModule } from './modules/leads/leads.module';
 import { FriendRequestsModule } from './modules/friend-requests/friend-requests.module';
+import { StatsModule } from './modules/stats/stats.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { FriendRequestsModule } from './modules/friend-requests/friend-requests.
     SchedulesModule,
     LeadsModule,
     FriendRequestsModule,
+    StatsModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -162,6 +162,51 @@ export class SubscriptionsService implements OnModuleInit {
 
   // ---- admin ----
 
+  /** Revenue actually collected (activated subscriptions), grouped by month
+   * ("YYYY-MM"), oldest first. Pending/cancelled/expired don't count as revenue. */
+  async revenueByMonth(months: number) {
+    const since = new Date();
+    since.setMonth(since.getMonth() - months);
+    const rows = await this.model.aggregate<{
+      _id: string;
+      total: number;
+      count: number;
+    }>([
+      {
+        $match: {
+          status: {
+            $in: [SubscriptionStatus.Active, SubscriptionStatus.Expired],
+          },
+          startedAt: { $gte: since },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$startedAt' } },
+          total: { $sum: '$snapshot.totalPrice' },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+    return rows.map((r) => ({ month: r._id, total: r.total, count: r.count }));
+  }
+
+  /** How many active subscriptions per plan code — for a "plan popularity" chart. */
+  async activeByPlan() {
+    const rows = await this.model.aggregate<{ _id: string; count: number }>([
+      { $match: { status: SubscriptionStatus.Active } },
+      { $group: { _id: '$snapshot.planCode', count: { $sum: 1 } } },
+    ]);
+    return rows.map((r) => ({ planCode: r._id, count: r.count }));
+  }
+
+  countByStatus() {
+    return this.model.aggregate<{ _id: string; count: number }>([
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]);
+  }
+
   listAll() {
     return this.model
       .find()
@@ -171,6 +216,17 @@ export class SubscriptionsService implements OnModuleInit {
   }
 
   /** Admin confirms payment: starts the period and replaces any active one. */
+  /** Admin declines a pending subscription (e.g. payment never arrived). */
+  async reject(id: string) {
+    const sub = await this.model.findById(id);
+    if (!sub) throw new NotFoundException('Không tìm thấy đăng ký');
+    if (sub.status !== SubscriptionStatus.Pending) {
+      throw new BadRequestException('Chỉ từ chối được đăng ký đang chờ');
+    }
+    sub.status = SubscriptionStatus.Cancelled;
+    return sub.save();
+  }
+
   async activate(id: string) {
     const sub = await this.model.findById(id);
     if (!sub) throw new NotFoundException('Không tìm thấy đăng ký');
@@ -195,6 +251,173 @@ export class SubscriptionsService implements OnModuleInit {
       }
       throw e;
     }
+  }
+
+  /** Admin gives a customer a plan directly: created and activated at once. */
+  async grant(userId: string, dto: SubscribeDto) {
+    const sub = await this.subscribe(userId, dto);
+    if (sub.status !== SubscriptionStatus.Pending) return sub;
+    return this.activate(String(sub._id));
+  }
+
+  /** Admin adds a "+N staff" pack to a running subscription (same plan only). */
+  async addSeats(id: string, addonId: string) {
+    const sub = await this.model.findById(id);
+    if (!sub) throw new NotFoundException('Không tìm thấy đăng ký');
+    if (sub.status !== SubscriptionStatus.Active) {
+      throw new BadRequestException('Chỉ thêm nhân sự cho gói đang hiệu lực');
+    }
+    const a = await this.addons.get(addonId);
+    if (!a.isActive) {
+      throw new BadRequestException('Gói mua thêm này đã ngừng bán');
+    }
+    if (a.requiresPlanCode !== sub.snapshot.planCode) {
+      throw new BadRequestException(
+        `Gói mua thêm chỉ áp dụng cho gói ${a.requiresPlanCode}`,
+      );
+    }
+    const price = priceFor(a.prices, sub.snapshot.months);
+    if (price === undefined) {
+      throw new BadRequestException(
+        `Gói mua thêm không có chu kỳ ${sub.snapshot.months} tháng`,
+      );
+    }
+    const prev = sub.snapshot.addon;
+    sub.snapshot.addon = {
+      code: a.code,
+      name: prev ? `${prev.name} + ${a.name}` : a.name,
+      seats: (prev?.seats ?? 0) + a.seats,
+      price: (prev?.price ?? 0) + price,
+    };
+    sub.snapshot.totalPrice += price;
+    sub.snapshot.maxUsers += a.seats;
+    sub.markModified('snapshot');
+    return sub.save();
+  }
+
+  /**
+   * Admin edits a running subscription: switch plan, move the expiry date,
+   * and/or set the total number of extra staff seats (add or remove).
+   */
+  async adminUpdate(
+    id: string,
+    input: {
+      planId?: string;
+      expiresAt?: Date;
+      extraSeats?: number;
+      addonId?: string;
+      months?: number;
+    },
+  ) {
+    const sub = await this.model.findById(id);
+    if (!sub) throw new NotFoundException('Không tìm thấy đăng ký');
+    if (sub.status !== SubscriptionStatus.Active) {
+      throw new BadRequestException('Chỉ sửa được gói đang hiệu lực');
+    }
+    const snap = sub.snapshot;
+    const monthsChanged = !!input.months && input.months !== snap.months;
+    if (monthsChanged) {
+      const plan = await this.plans.get(String(sub.planId));
+      const price = priceFor(plan.prices, input.months!);
+      if (price === undefined) {
+        throw new BadRequestException(
+          `Gói ${plan.name} không có chu kỳ ${input.months} tháng`,
+        );
+      }
+      if (snap.addon && sub.addonId) {
+        const a = await this.addons.get(String(sub.addonId));
+        const ap = priceFor(a.prices, input.months!);
+        if (ap === undefined) {
+          throw new BadRequestException(
+            `Gói mua thêm không có chu kỳ ${input.months} tháng`,
+          );
+        }
+        snap.addon.price = Math.round((ap / a.seats) * snap.addon.seats);
+      }
+      snap.months = input.months!;
+      snap.planPrice = price;
+      snap.totalPrice = price + (snap.addon?.price ?? 0);
+    }
+    let extra = snap.addon?.seats ?? 0;
+    const perSeat =
+      snap.addon && snap.addon.seats > 0
+        ? snap.addon.price / snap.addon.seats
+        : 0;
+
+    if (input.planId && input.planId !== String(sub.planId)) {
+      const plan = await this.plans.get(input.planId);
+      const price = priceFor(plan.prices, snap.months);
+      if (price === undefined) {
+        throw new BadRequestException(
+          `Gói ${plan.name} không có chu kỳ ${snap.months} tháng`,
+        );
+      }
+      sub.planId = plan._id;
+      snap.planCode = plan.code;
+      snap.planName = plan.name;
+      snap.planPrice = price;
+      snap.currency = plan.currency;
+      snap.maxUsers = plan.maxUsers;
+      if (input.extraSeats === undefined && snap.addon) {
+        // Staff packs only exist for the plan they were bought for.
+        const a = await this.addons.get(String(sub.addonId));
+        if (a.requiresPlanCode !== plan.code) extra = 0;
+      }
+      if (input.extraSeats === undefined) input.extraSeats = extra;
+      sub.addonId = extra > 0 ? sub.addonId : null;
+    }
+
+    if (input.addonId) {
+      const a = await this.addons.get(input.addonId);
+      if (!a.isActive) {
+        throw new BadRequestException('Gói mua thêm này đã ngừng bán');
+      }
+      if (a.requiresPlanCode !== snap.planCode) {
+        throw new BadRequestException(
+          `Gói mua thêm chỉ áp dụng cho gói ${a.requiresPlanCode}`,
+        );
+      }
+      const price = priceFor(a.prices, snap.months);
+      if (price === undefined) {
+        throw new BadRequestException(
+          `Gói mua thêm không có chu kỳ ${snap.months} tháng`,
+        );
+      }
+      snap.addon = {
+        code: a.code,
+        name: a.name,
+        seats: a.seats,
+        price,
+      };
+      sub.addonId = a._id;
+      input.extraSeats = a.seats;
+    } else if (input.extraSeats !== undefined) {
+      extra = input.extraSeats;
+      if (extra === 0) sub.addonId = null;
+      snap.addon =
+        extra > 0
+          ? {
+              code: snap.addon?.code ?? 'manual',
+              name: snap.addon?.name ?? 'Thêm nhân sự',
+              seats: extra,
+              price: Math.round(perSeat * extra),
+            }
+          : null;
+    }
+    if (input.planId || input.extraSeats !== undefined) {
+      const plan = await this.plans.get(String(sub.planId));
+      snap.maxUsers = plan.maxUsers + (snap.addon?.seats ?? 0);
+      snap.totalPrice = snap.planPrice + (snap.addon?.price ?? 0);
+    }
+
+    if (input.expiresAt) {
+      if (input.expiresAt.getTime() <= Date.now()) {
+        throw new BadRequestException('Hạn dùng phải ở tương lai');
+      }
+      sub.expiresAt = input.expiresAt;
+    }
+    sub.markModified('snapshot');
+    return sub.save();
   }
 
   private expireDue(userId: string) {
