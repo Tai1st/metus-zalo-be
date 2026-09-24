@@ -12,8 +12,7 @@
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\"",
     "create-admin": "node scripts/create-admin.mjs",
-    "create-user": "node scripts/create-user.mjs",
-    "migrate:zalo-sqlite": "node scripts/migrate-zalo-sqlite.mjs"
+    "create-user": "node scripts/create-user.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.5",
@@ -26,7 +25,6 @@
     "@nestjs/swagger": "^11.4.7",
     "@nestjs/throttler": "^6.7.0",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^13.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "https-proxy-agent": "^7.0.6",
