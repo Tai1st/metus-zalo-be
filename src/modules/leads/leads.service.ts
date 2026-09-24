@@ -33,6 +33,7 @@ export class LeadsService {
       fullName: dto.fullName,
       phone: dto.phone,
       scale: dto.scale,
+      referrer: dto.referrer?.trim() ?? '',
       createdAt: new Date().toISOString(),
     });
     void this.notifyTelegram(seq, dto);
@@ -48,6 +49,7 @@ export class LeadsService {
       'Họ tên: ' + escapeHtml(dto.fullName),
       'SĐT: ' + escapeHtml(dto.phone),
       'Quy mô: ' + escapeHtml(SCALE_LABEL[dto.scale] ?? dto.scale),
+      'Người giới thiệu: ' + escapeHtml(dto.referrer?.trim() || 'Không có'),
     ].join('\n');
     try {
       const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {

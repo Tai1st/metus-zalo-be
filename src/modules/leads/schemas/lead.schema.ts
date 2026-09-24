@@ -16,6 +16,9 @@ export class Lead {
   @Prop({ required: true })
   scale: string;
 
+  @Prop({ default: '' })
+  referrer: string;
+
   @Prop({ required: true })
   createdAt: string;
 }
