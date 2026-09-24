@@ -5,15 +5,22 @@ import { CounterService } from '../../common/counter.service';
 import { Lead, LeadSchema } from './schemas/lead.schema';
 import { LeadsService } from './leads.service';
 import { LeadsInternalController } from './leads-internal.controller';
+import { LeadsAdminController } from './leads-admin.controller';
+import { UsersModule } from '../users/users.module';
+import { PlansModule } from '../plans/plans.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
+    UsersModule,
+    PlansModule,
+    SubscriptionsModule,
     MongooseModule.forFeature([
       { name: Counter.name, schema: CounterSchema },
       { name: Lead.name, schema: LeadSchema },
     ]),
   ],
-  controllers: [LeadsInternalController],
+  controllers: [LeadsInternalController, LeadsAdminController],
   providers: [CounterService, LeadsService],
 })
 export class LeadsModule {}

@@ -41,6 +41,12 @@ export class PlansService implements OnModuleInit {
     return this.model.find().sort({ sortOrder: 1 });
   }
 
+  async getByCode(code: string) {
+    const plan = await this.model.findOne({ code });
+    if (!plan) throw new NotFoundException('Không tìm thấy gói ' + code);
+    return plan;
+  }
+
   async get(id: string) {
     const plan = await this.model.findById(id);
     if (!plan) throw new NotFoundException('Không tìm thấy gói cước');
