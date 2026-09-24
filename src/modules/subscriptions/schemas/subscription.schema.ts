@@ -26,7 +26,7 @@ export class SubscriptionSnapshot {
   @Prop() planName: string;
   @Prop() months: number;
   /** Set when the plan has an exact length in days (e.g. trial = 30). */
-  @Prop({ default: null }) days: number | null;
+  @Prop({ type: Number, default: null }) days: number | null;
   @Prop() planPrice: number;
   @Prop({ type: AddonSnapshotSchema, default: null })
   addon: AddonSnapshot | null;

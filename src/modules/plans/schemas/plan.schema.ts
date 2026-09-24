@@ -47,7 +47,7 @@ export class Plan {
   isPopular: boolean;
 
   /** Exact length in days; overrides the calendar-month length (trial = 30). */
-  @Prop({ default: null })
+  @Prop({ type: Number, default: null })
   durationDays: number | null;
 
   /** Hidden plans (e.g. trial) are only granted by an admin, never listed or bought. */
