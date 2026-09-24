@@ -22,6 +22,11 @@ export class Campaign {
   @Prop({ type: [String], default: [] })
   accountIds: string[];
 
+  /** Mongo user id of whoever created it (leader or one of their staff) — '' for
+   * campaigns created before this field existed. Powers the per-staff report. */
+  @Prop({ default: '' })
+  createdBy: string;
+
   @Prop({ type: [String], default: [] })
   targets: string[];
 

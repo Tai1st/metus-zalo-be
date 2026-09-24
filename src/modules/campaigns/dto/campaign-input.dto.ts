@@ -23,6 +23,7 @@ export class CreateCampaignDto {
   @IsString() config: string;
   @IsArray() @ArrayMaxSize(2000) accountIds: string[];
   @IsArray() @ArrayMaxSize(200_000) targets: string[];
+  @IsOptional() @IsString() createdBy?: string;
 }
 
 export class UpdateCampaignDto {

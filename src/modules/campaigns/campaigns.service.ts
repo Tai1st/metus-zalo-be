@@ -20,6 +20,7 @@ export type CampaignPublic = {
   targets: string[];
   sentOk: number;
   sentFail: number;
+  createdBy: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -57,6 +58,7 @@ export class CampaignsService {
       targets: doc.targets,
       sentOk: doc.sentOk,
       sentFail: doc.sentFail,
+      createdBy: doc.createdBy ?? '',
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     };
@@ -101,6 +103,7 @@ export class CampaignsService {
       config: dto.config,
       accountIds: dto.accountIds,
       targets: dto.targets,
+      createdBy: dto.createdBy ?? '',
       createdAt: now,
       updatedAt: now,
     });
