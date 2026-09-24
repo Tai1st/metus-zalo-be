@@ -318,111 +318,101 @@ export class SubscriptionsService implements OnModuleInit {
       throw new BadRequestException('Chỉ sửa được gói đang hiệu lực');
     }
     const snap = sub.snapshot;
-    const monthsChanged = !!input.months && input.months !== snap.months;
-    const planChanged = !!input.planId && input.planId !== String(sub.planId);
 
-    // When both plan and months change together, months must be validated
-    // against the NEW plan's prices, not the plan being left behind — a
-    // months-only-valid-for-the-old-plan check here misreports the new plan
-    // as missing a cycle it never needed to have.
-    const monthsPlan = planChanged
-      ? await this.plans.get(input.planId!)
-      : monthsChanged
-        ? await this.plans.get(String(sub.planId))
-        : null;
+    // Plan, cycle and add-on are resolved together as one target state and
+    // then applied atomically. Patching them incrementally (old plan's
+    // price list for the new cycle, or repricing an add-on that's about to
+    // be dropped) is what caused the back-and-forth false positives — a
+    // combination valid in the end kept getting rejected over an
+    // intermediate state that was never meant to exist.
+    const touchesPricing =
+      input.planId !== undefined ||
+      input.months !== undefined ||
+      input.addonId !== undefined ||
+      input.extraSeats !== undefined;
 
-    if (monthsChanged) {
-      const targetMonths = input.months!;
-      const price = priceFor(monthsPlan!.prices, targetMonths);
-      if (price === undefined) {
+    if (touchesPricing) {
+      const targetPlan = input.planId
+        ? await this.plans.get(input.planId)
+        : await this.plans.get(String(sub.planId));
+      const targetMonths = input.months ?? snap.months;
+      const planPrice = priceFor(targetPlan.prices, targetMonths);
+      if (planPrice === undefined) {
         throw new BadRequestException(
-          `Gói ${monthsPlan!.name} không có chu kỳ ${targetMonths} tháng`,
+          `Gói ${targetPlan.name} không có chu kỳ ${targetMonths} tháng`,
         );
       }
-      if (snap.addon && sub.addonId) {
-        const a = await this.addons.get(String(sub.addonId));
-        const ap = priceFor(a.prices, targetMonths);
-        if (ap === undefined) {
+
+      let targetAddon: typeof snap.addon = null;
+      let targetAddonDocId: typeof sub.addonId = null;
+
+      if (input.addonId) {
+        const a = await this.addons.get(input.addonId);
+        if (!a.isActive) {
+          throw new BadRequestException('Gói mua thêm này đã ngừng bán');
+        }
+        if (a.requiresPlanCode !== targetPlan.code) {
+          throw new BadRequestException(
+            `Gói mua thêm chỉ áp dụng cho gói ${a.requiresPlanCode}`,
+          );
+        }
+        const price = priceFor(a.prices, targetMonths);
+        if (price === undefined) {
           throw new BadRequestException(
             `Gói mua thêm không có chu kỳ ${targetMonths} tháng`,
           );
         }
-        snap.addon.price = Math.round((ap / a.seats) * snap.addon.seats);
-      }
-      snap.months = targetMonths;
-      snap.planPrice = price;
-      snap.totalPrice = price + (snap.addon?.price ?? 0);
-    }
-    let extra = snap.addon?.seats ?? 0;
-    const perSeat =
-      snap.addon && snap.addon.seats > 0
-        ? snap.addon.price / snap.addon.seats
-        : 0;
-
-    if (planChanged) {
-      const plan = monthsPlan!;
-      const price = priceFor(plan.prices, snap.months);
-      if (price === undefined) {
-        throw new BadRequestException(
-          `Gói ${plan.name} không có chu kỳ ${snap.months} tháng`,
-        );
-      }
-      sub.planId = plan._id;
-      snap.planCode = plan.code;
-      snap.planName = plan.name;
-      snap.planPrice = price;
-      snap.currency = plan.currency;
-      snap.maxUsers = plan.maxUsers;
-      if (input.extraSeats === undefined && snap.addon) {
-        // Staff packs only exist for the plan they were bought for.
+        targetAddon = { code: a.code, name: a.name, seats: a.seats, price };
+        targetAddonDocId = a._id;
+      } else if (input.extraSeats !== undefined) {
+        if (input.extraSeats > 0) {
+          // A manual seat count with no catalogue add-on behind it: price
+          // it per-seat off whatever rate is already on the subscription.
+          const perSeat =
+            snap.addon && snap.addon.seats > 0
+              ? snap.addon.price / snap.addon.seats
+              : 0;
+          targetAddon = {
+            code: snap.addon?.code ?? 'manual',
+            name: snap.addon?.name ?? 'Thêm nhân sự',
+            seats: input.extraSeats,
+            price: Math.round(perSeat * input.extraSeats),
+          };
+          targetAddonDocId = sub.addonId;
+        }
+        // extraSeats === 0 → no add-on, targetAddon stays null.
+      } else if (snap.addon && sub.addonId) {
+        // Neither given: keep the current add-on only if it still fits the
+        // target plan, repriced for the target cycle — otherwise it's
+        // dropped rather than left stale or blocking the update.
         const a = await this.addons.get(String(sub.addonId));
-        if (a.requiresPlanCode !== plan.code) extra = 0;
+        if (a.requiresPlanCode === targetPlan.code) {
+          const price = priceFor(a.prices, targetMonths);
+          if (price === undefined) {
+            throw new BadRequestException(
+              `Gói mua thêm không có chu kỳ ${targetMonths} tháng`,
+            );
+          }
+          targetAddon = {
+            code: a.code,
+            name: a.name,
+            seats: snap.addon.seats,
+            price: Math.round((price / a.seats) * snap.addon.seats),
+          };
+          targetAddonDocId = a._id;
+        }
       }
-      if (input.extraSeats === undefined) input.extraSeats = extra;
-      sub.addonId = extra > 0 ? sub.addonId : null;
-    }
 
-    if (input.addonId) {
-      const a = await this.addons.get(input.addonId);
-      if (!a.isActive) {
-        throw new BadRequestException('Gói mua thêm này đã ngừng bán');
-      }
-      if (a.requiresPlanCode !== snap.planCode) {
-        throw new BadRequestException(
-          `Gói mua thêm chỉ áp dụng cho gói ${a.requiresPlanCode}`,
-        );
-      }
-      const price = priceFor(a.prices, snap.months);
-      if (price === undefined) {
-        throw new BadRequestException(
-          `Gói mua thêm không có chu kỳ ${snap.months} tháng`,
-        );
-      }
-      snap.addon = {
-        code: a.code,
-        name: a.name,
-        seats: a.seats,
-        price,
-      };
-      sub.addonId = a._id;
-      input.extraSeats = a.seats;
-    } else if (input.extraSeats !== undefined) {
-      extra = input.extraSeats;
-      if (extra === 0) sub.addonId = null;
-      snap.addon =
-        extra > 0
-          ? {
-              code: snap.addon?.code ?? 'manual',
-              name: snap.addon?.name ?? 'Thêm nhân sự',
-              seats: extra,
-              price: Math.round(perSeat * extra),
-            }
-          : null;
-    }
-    if (input.planId || input.extraSeats !== undefined) {
-      const plan = await this.plans.get(String(sub.planId));
-      snap.maxUsers = plan.maxUsers + (snap.addon?.seats ?? 0);
-      snap.totalPrice = snap.planPrice + (snap.addon?.price ?? 0);
+      sub.planId = targetPlan._id;
+      sub.addonId = targetAddonDocId;
+      snap.planCode = targetPlan.code;
+      snap.planName = targetPlan.name;
+      snap.currency = targetPlan.currency;
+      snap.months = targetMonths;
+      snap.planPrice = planPrice;
+      snap.addon = targetAddon;
+      snap.maxUsers = targetPlan.maxUsers + (targetAddon?.seats ?? 0);
+      snap.totalPrice = planPrice + (targetAddon?.price ?? 0);
     }
 
     if (input.expiresAt) {
