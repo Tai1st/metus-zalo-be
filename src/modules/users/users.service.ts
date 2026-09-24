@@ -4,8 +4,8 @@ import {
   Logger,
   OnModuleInit,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { Connection, Model, Types } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { Role } from '../../common/enums/role.enum';
 import { User, UserDocument } from './schemas/user.schema';
@@ -22,6 +22,7 @@ export class UsersService implements OnModuleInit {
     @InjectModel(User.name) private readonly model: Model<UserDocument>,
     @InjectModel(Subscription.name)
     private readonly subs: Model<SubscriptionDocument>,
+    @InjectConnection() private readonly db: Connection,
   ) {}
 
   /** Two accounts must never share a username: refuse to start without the unique index. */
@@ -158,6 +159,64 @@ export class UsersService implements OnModuleInit {
     user.isActive = isActive;
     await user.save();
     return user;
+  }
+
+  /**
+   * Delete a customer and everything that only exists because of them: their
+   * staff accounts, the Zalo accounts they (or their staff) use, campaigns /
+   * schedules / chat history / friend-request history tied to those Zalo
+   * accounts, their proxies, and their subscriptions. Other modules' schemas
+   * are touched via raw collection names (not imported models) so this stays
+   * a one-off destructive operation instead of a permanent cross-module
+   * dependency.
+   */
+  async deleteCustomerCascade(id: string): Promise<boolean> {
+    const customer = await this.getCustomer(id);
+    if (!customer) return false;
+
+    const staff = await this.model.find(
+      { role: Role.Staff, ownerId: id },
+      { allowedZaloIds: 1 },
+    );
+    const staffIds = staff.map((s) => String(s._id));
+    const zaloIds = Array.from(
+      new Set([
+        ...(customer.allowedZaloIds ?? []),
+        ...staff.flatMap((s) => s.allowedZaloIds ?? []),
+      ]),
+    );
+
+    if (zaloIds.length) {
+      const campaigns = await this.db
+        .collection('campaigns')
+        .find({ accountIds: { $in: zaloIds } }, { projection: { seq: 1 } })
+        .toArray();
+      const campaignSeqs = campaigns.map((c) => c.seq as number);
+
+      await Promise.all([
+        this.db.collection('zalo_accounts').deleteMany({ zaloId: { $in: zaloIds } }),
+        this.db.collection('campaigns').deleteMany({ seq: { $in: campaignSeqs } }),
+        this.db.collection('schedules').deleteMany({ campaignId: { $in: campaignSeqs } }),
+        this.db.collection('chat_messages').deleteMany({ zaloId: { $in: zaloIds } }),
+        this.db.collection('thread_names').deleteMany({ zaloId: { $in: zaloIds } }),
+        this.db.collection('chat_label_assignments').deleteMany({ accountId: { $in: zaloIds } }),
+        this.db.collection('friend_requests').deleteMany({ accountId: { $in: zaloIds } }),
+      ]);
+    }
+
+    await Promise.all([
+      this.db.collection('zalo_proxies').deleteMany({ ownerId: id }),
+      this.subs.deleteMany({ userId: new Types.ObjectId(id) }),
+      this.db
+        .collection('notification_state')
+        .deleteMany({ key: { $in: [id, ...staffIds] } }),
+    ]);
+
+    if (staffIds.length) {
+      await this.model.deleteMany({ _id: { $in: staffIds } });
+    }
+    await this.model.deleteOne({ _id: id });
+    return true;
   }
 
   countCustomers() {

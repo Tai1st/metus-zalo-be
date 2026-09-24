@@ -319,25 +319,37 @@ export class SubscriptionsService implements OnModuleInit {
     }
     const snap = sub.snapshot;
     const monthsChanged = !!input.months && input.months !== snap.months;
+    const planChanged = !!input.planId && input.planId !== String(sub.planId);
+
+    // When both plan and months change together, months must be validated
+    // against the NEW plan's prices, not the plan being left behind — a
+    // months-only-valid-for-the-old-plan check here misreports the new plan
+    // as missing a cycle it never needed to have.
+    const monthsPlan = planChanged
+      ? await this.plans.get(input.planId!)
+      : monthsChanged
+        ? await this.plans.get(String(sub.planId))
+        : null;
+
     if (monthsChanged) {
-      const plan = await this.plans.get(String(sub.planId));
-      const price = priceFor(plan.prices, input.months!);
+      const targetMonths = input.months!;
+      const price = priceFor(monthsPlan!.prices, targetMonths);
       if (price === undefined) {
         throw new BadRequestException(
-          `Gói ${plan.name} không có chu kỳ ${input.months} tháng`,
+          `Gói ${monthsPlan!.name} không có chu kỳ ${targetMonths} tháng`,
         );
       }
       if (snap.addon && sub.addonId) {
         const a = await this.addons.get(String(sub.addonId));
-        const ap = priceFor(a.prices, input.months!);
+        const ap = priceFor(a.prices, targetMonths);
         if (ap === undefined) {
           throw new BadRequestException(
-            `Gói mua thêm không có chu kỳ ${input.months} tháng`,
+            `Gói mua thêm không có chu kỳ ${targetMonths} tháng`,
           );
         }
         snap.addon.price = Math.round((ap / a.seats) * snap.addon.seats);
       }
-      snap.months = input.months!;
+      snap.months = targetMonths;
       snap.planPrice = price;
       snap.totalPrice = price + (snap.addon?.price ?? 0);
     }
@@ -347,8 +359,8 @@ export class SubscriptionsService implements OnModuleInit {
         ? snap.addon.price / snap.addon.seats
         : 0;
 
-    if (input.planId && input.planId !== String(sub.planId)) {
-      const plan = await this.plans.get(input.planId);
+    if (planChanged) {
+      const plan = monthsPlan!;
       const price = priceFor(plan.prices, snap.months);
       if (price === undefined) {
         throw new BadRequestException(

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   ConflictException,
   NotFoundException,
@@ -78,5 +79,14 @@ export class CustomersController {
     const user = await this.users.setCustomerActive(id, dto.isActive);
     if (!user) throw new NotFoundException('Không tìm thấy người dùng');
     return user.toJSON();
+  }
+
+  /** Xoá khách hàng và toàn bộ dữ liệu liên quan: nhân sự, tài khoản Zalo,
+   * chiến dịch/lịch trình, lịch sử chat, lời mời kết bạn, proxy, đăng ký. */
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
+    const removed = await this.users.deleteCustomerCascade(id);
+    if (!removed) throw new NotFoundException('Không tìm thấy khách hàng');
+    return { removed: id };
   }
 }
