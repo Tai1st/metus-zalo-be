@@ -17,4 +17,5 @@ export class ProxyInputDto {
   @IsOptional() @IsString() @MaxLength(200) username?: string;
   @IsOptional() @IsString() @MaxLength(200) password?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsString() @MaxLength(64) ownerId?: string;
 }

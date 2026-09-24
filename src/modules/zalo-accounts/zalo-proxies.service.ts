@@ -15,6 +15,7 @@ export type ProxyLike = {
 
 export type ProxyPublic = ProxyLike & {
   id: number;
+  ownerId: string;
   label: string;
   isActive: boolean;
   createdAt: string;
@@ -33,6 +34,7 @@ export class ZaloProxiesService {
   private toPublic(doc: ZaloProxyDocument): ProxyPublic {
     return {
       id: doc.seq,
+      ownerId: doc.ownerId ?? '',
       label: doc.label,
       protocol: doc.protocol,
       host: doc.host,
@@ -78,6 +80,7 @@ export class ZaloProxiesService {
       username: input.username ?? '',
       password: input.password ?? '',
       isActive: input.isActive ?? true,
+      ownerId: input.ownerId ?? '',
       createdAt: new Date().toISOString(),
     });
     return this.toPublic(row);

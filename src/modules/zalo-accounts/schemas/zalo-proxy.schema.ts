@@ -29,6 +29,10 @@ export class ZaloProxy {
   @Prop({ default: '' })
   password: string;
 
+  /** User who created it; '' = legacy proxy created before ownership existed. */
+  @Prop({ default: '' })
+  ownerId: string;
+
   @Prop({ default: true })
   isActive: boolean;
 
