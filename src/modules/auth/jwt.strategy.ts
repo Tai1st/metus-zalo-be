@@ -24,6 +24,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ');
     }
+    if (!(await this.users.planAccessOk(user))) {
+      throw new UnauthorizedException('Gói dịch vụ đã hết hạn');
+    }
     return {
       id: String(user._id),
       username: user.username,

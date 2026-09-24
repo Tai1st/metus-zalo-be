@@ -25,6 +25,10 @@ export class User {
   @Prop({ default: true })
   isActive: boolean;
 
+  /** For Role.Staff: the customer (User) that owns this employee. */
+  @Prop({ default: '' })
+  ownerId: string;
+
   /** Zalo account ids this user may see/operate — ignored for Role.Admin
    * (always full access). Empty for a new employee until an admin assigns some. */
   @Prop({ type: [String], default: [] })

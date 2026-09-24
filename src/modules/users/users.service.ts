@@ -1,9 +1,18 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { Role } from '../../common/enums/role.enum';
 import { User, UserDocument } from './schemas/user.schema';
+import {
+  Subscription,
+  SubscriptionDocument,
+} from '../subscriptions/schemas/subscription.schema';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -11,6 +20,8 @@ export class UsersService implements OnModuleInit {
 
   constructor(
     @InjectModel(User.name) private readonly model: Model<UserDocument>,
+    @InjectModel(Subscription.name)
+    private readonly subs: Model<SubscriptionDocument>,
   ) {}
 
   /** Two accounts must never share a username: refuse to start without the unique index. */
@@ -50,6 +61,7 @@ export class UsersService implements OnModuleInit {
     phone?: string;
     role?: Role;
     allowedZaloIds?: string[];
+    ownerId?: string;
   }) {
     const passwordHash = await bcrypt.hash(input.password, 12);
     return this.model.create({
@@ -59,12 +71,61 @@ export class UsersService implements OnModuleInit {
       phone: input.phone?.trim() ?? '',
       role: input.role ?? Role.User,
       allowedZaloIds: input.allowedZaloIds ?? [],
+      ownerId: input.ownerId ?? '',
     });
   }
 
-  /** Chỉ tài khoản nhân sự (role Staff) — không lẫn User/Admin của tính năng khác. */
-  list() {
-    return this.model.find({ role: Role.Staff }).sort({ username: 1 });
+  /** Nhân sự của một khách hàng. */
+  list(ownerId: string) {
+    return this.model.find({ role: Role.Staff, ownerId }).sort({ username: 1 });
+  }
+
+  countStaff(ownerId: string) {
+    return this.model.countDocuments({ role: Role.Staff, ownerId });
+  }
+
+  /** Staff seats of the active plan (plan users + add-on seats, minus the owner). */
+  async staffLimit(ownerId: string): Promise<number> {
+    const sub = await this.subs
+      .findOne({ userId: ownerId, status: 'active' })
+      .sort({ startedAt: -1 });
+    if (!sub) return 0;
+    if (sub.expiresAt && new Date(sub.expiresAt).getTime() < Date.now()) return 0;
+    return Math.max(0, (sub.snapshot?.maxUsers ?? 1) - 1);
+  }
+
+  /**
+   * Customers need an active, unexpired plan to use the web; staff ride on
+   * their leader's plan (and the leader must not be locked). Admin is exempt.
+   */
+  async planAccessOk(user: UserDocument): Promise<boolean> {
+    if (user.role === Role.Admin) return true;
+    let ownerId = String(user._id);
+    if (user.role === Role.Staff) {
+      if (!user.ownerId) return false;
+      const owner = await this.model.findById(user.ownerId);
+      if (!owner || !owner.isActive) return false;
+      ownerId = String(owner._id);
+    }
+    const sub = await this.subs
+      .findOne({ userId: ownerId, status: 'active' })
+      .sort({ startedAt: -1 });
+    if (!sub) return false;
+    return !sub.expiresAt || new Date(sub.expiresAt).getTime() > Date.now();
+  }
+
+  findStaffOf(id: string, ownerId: string) {
+    return this.model.findOne({ _id: id, role: Role.Staff, ownerId });
+  }
+
+  /** A customer may only hand their staff Zalo accounts they can use themselves. */
+  async assertZaloIdsOwned(ownerId: string, ids?: string[]) {
+    if (!ids?.length) return;
+    const owner = await this.model.findById(ownerId);
+    const mine = new Set(owner?.allowedZaloIds ?? []);
+    if (ids.some((z) => !mine.has(z))) {
+      throw new ForbiddenException('Có tài khoản Zalo không thuộc quyền của bạn');
+    }
   }
 
   /** Khách hàng (role User) — tài khoản mua gói, tách khỏi Staff/Admin. */
@@ -107,6 +168,7 @@ export class UsersService implements OnModuleInit {
 
   async update(
     id: string,
+    ownerId: string,
     input: {
       fullName?: string;
       phone?: string;
@@ -114,8 +176,8 @@ export class UsersService implements OnModuleInit {
       allowedZaloIds?: string[];
     },
   ) {
-    const user = await this.model.findById(id);
-    if (!user || user.role !== Role.Staff) return null;
+    const user = await this.findStaffOf(id, ownerId);
+    if (!user) return null;
     if (input.fullName !== undefined) user.fullName = input.fullName.trim();
     if (input.phone !== undefined) user.phone = input.phone.trim();
     if (input.isActive !== undefined) user.isActive = input.isActive;
@@ -135,9 +197,9 @@ export class UsersService implements OnModuleInit {
     );
   }
 
-  async remove(id: string) {
-    const user = await this.model.findById(id);
-    if (!user || user.role !== Role.Staff) return false;
+  async remove(id: string, ownerId: string) {
+    const user = await this.findStaffOf(id, ownerId);
+    if (!user) return false;
     await user.deleteOne();
     return true;
   }
