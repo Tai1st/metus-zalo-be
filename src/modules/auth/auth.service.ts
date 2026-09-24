@@ -53,7 +53,7 @@ export class AuthService {
     if (!(await this.users.planAccessOk(user))) {
       throw new ForbiddenException(
         user.role === Role.Staff
-          ? 'Gói của tài khoản quản lý đã hết hạn — nhân sự chưa thể đăng nhập'
+          ? 'Gói của tài khoản quản lý đã hết hạn hoặc không còn chỗ cho nhân sự — chưa thể đăng nhập'
           : 'Gói dịch vụ đã hết hạn hoặc chưa kích hoạt — vui lòng liên hệ để gia hạn',
       );
     }

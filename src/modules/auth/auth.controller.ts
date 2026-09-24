@@ -11,6 +11,7 @@ import {
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
 import { UsersService } from '../users/users.service';
+import { Role } from '../../common/enums/role.enum';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -41,7 +42,12 @@ export class AuthController {
   @ApiBearerAuth()
   @Get('me')
   async me(@CurrentUser() user: AuthUser) {
-    return (await this.users.findById(user.id))?.toJSON();
+    const me = await this.users.findById(user.id);
+    if (!me) return undefined;
+    // Only a Business-type plan (extra seats) unlocks staff management.
+    const staffLimit =
+      me.role === Role.User ? await this.users.staffLimit(String(me._id)) : 0;
+    return { ...(me.toJSON() as Record<string, unknown>), staffLimit };
   }
 
   // Brute-forcing the current password is the only thing to guard against

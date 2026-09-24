@@ -111,7 +111,21 @@ export class UsersService implements OnModuleInit {
       .findOne({ userId: ownerId, status: 'active' })
       .sort({ startedAt: -1 });
     if (!sub) return false;
-    return !sub.expiresAt || new Date(sub.expiresAt).getTime() > Date.now();
+    if (sub.expiresAt && new Date(sub.expiresAt).getTime() <= Date.now()) {
+      return false;
+    }
+    if (user.role === Role.Staff) {
+      // Plan downgraded below the number of staff: earliest-created keep
+      // their seat, the rest lose access until the leader upgrades again.
+      const seats = Math.max(0, (sub.snapshot?.maxUsers ?? 1) - 1);
+      const before = await this.model.countDocuments({
+        role: Role.Staff,
+        ownerId,
+        _id: { $lt: user._id },
+      });
+      return before < seats;
+    }
+    return true;
   }
 
   findStaffOf(id: string, ownerId: string) {
