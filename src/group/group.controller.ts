@@ -23,6 +23,17 @@ type Body_ = {
 export class GroupController {
   constructor(private readonly groups: GroupService) {}
 
+  /** Toàn bộ nhóm mà tài khoản đang tham gia — dùng cho ô chọn "Nhóm đích". */
+  @Post('groups-mine')
+  @HttpCode(200)
+  async listMine(@Body() body: Body_) {
+    const s = body.session;
+    if (!s?.zaloId || !s.cookies || !s.imei || !s.userAgent) {
+      throw new BadRequestException('Thiếu thông tin phiên Zalo');
+    }
+    return this.groups.listMine(s);
+  }
+
   /** Thành viên của nhóm Zalo theo link mời. `session` do server Next gửi kèm. */
   @Post('group-link-members')
   @HttpCode(200)

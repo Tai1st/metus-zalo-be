@@ -9,6 +9,14 @@ export type GroupMember = {
   role: 'owner' | 'admin' | 'member';
 };
 
+export type GroupPublic = {
+  groupId: string;
+  name: string;
+  avt: string;
+  fullAvt: string;
+  totalMember: number;
+};
+
 export type GroupLinkMembersResult = {
   name: string;
   total: number;
@@ -113,6 +121,30 @@ export class GroupService {
       }
     }
     return sortByRole(members);
+  }
+
+  /** Every group the account is currently a member of (for the "destination
+   * group" picker) — chạy hoàn toàn ở BE, trình duyệt không thấy cách gọi. */
+  async listMine(session: ZaloSession): Promise<GroupPublic[]> {
+    const api = await this.sessions.getApi(session);
+    const all = await api.getAllGroups();
+    const ids = Object.keys(all.gridVerMap ?? {});
+    const groups: GroupPublic[] = [];
+    for (let i = 0; i < ids.length; i += 40) {
+      const info = await api.getGroupInfo(ids.slice(i, i + 40));
+      for (const g of Object.values(info.gridInfoMap ?? {})) {
+        const groupId = String((g as { groupId?: unknown }).groupId ?? '');
+        if (!groupId) continue;
+        groups.push({
+          groupId,
+          name: String((g as { name?: unknown }).name ?? 'Nhóm'),
+          avt: String((g as { avt?: unknown }).avt ?? ''),
+          fullAvt: String((g as { fullAvt?: unknown }).fullAvt ?? ''),
+          totalMember: Number((g as { totalMember?: unknown }).totalMember) || 0,
+        });
+      }
+    }
+    return groups;
   }
 
   async linkMembers(
