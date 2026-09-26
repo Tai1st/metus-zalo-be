@@ -181,11 +181,12 @@ export class CampaignsService {
     return this.logModel.distinct('target', { campaignId, ok });
   }
 
-  /** Count sends in the trailing window for the daily-limit check. */
+  /** Count of attempts (success + failure) in the trailing window, for the
+   * daily-limit check — counting only successes let a campaign whose sends
+   * all fail run forever, since the cap was never reached. */
   async countSentSince(campaignId: number, sinceIso: string): Promise<number> {
     return this.logModel.countDocuments({
       campaignId,
-      ok: true,
       ts: { $gte: sinceIso },
     });
   }
