@@ -17,12 +17,15 @@ import type { Request, Response } from 'express';
 import { createReadStream } from 'node:fs';
 import { Public } from '../../common/decorators/public.decorator';
 import { Role } from '../../common/enums/role.enum';
+import { CertAppService } from './cert-app.service';
 import { CertQuickAppService } from './cert-quick-app.service';
 import { CertShopGuard, ShopUser } from './cert-shop.guard';
 import { CertSignService } from './cert-sign.service';
 import { StartSignDto } from './dto/cert-shop.dto';
 
 type Authed = Request & { user: ShopUser };
+/** 'metus' là app chính của shop (CertAppService), khác chỗ lưu với các app ký nhanh. */
+const MAIN_SLUG = 'metus';
 
 /** Công cụ ký IPA: mọi tài khoản đăng nhập đều dùng được, với chứng chỉ của chính họ (mua ở shop hoặc nơi khác). */
 @Public()
@@ -31,13 +34,21 @@ export class CertSignController {
   constructor(
     private readonly sign: CertSignService,
     private readonly quickApps: CertQuickAppService,
+    private readonly apps: CertAppService,
   ) {}
 
-  // Các app tiện ích có sẵn (vd ESign) để chọn nhanh làm nguồn ký, thay vì tự tải file lên.
+  // Các app có sẵn để chọn nhanh làm nguồn ký (app chính của shop + các app ký nhanh như ESign),
+  // thay vì tự tải file lên.
   @UseGuards(CertShopGuard)
   @Get('quick-apps')
-  listQuickApps() {
-    return this.quickApps.list();
+  async listQuickApps() {
+    const [main, quicks] = await Promise.all([this.apps.info(), this.quickApps.list()]);
+    return [
+      ...(main
+        ? [{ slug: MAIN_SLUG, name: main.name, version: main.version, bundleId: main.bundleId, minOs: main.minOs, size: main.size }]
+        : []),
+      ...quicks,
+    ];
   }
 
   /** Dùng một app có sẵn trên server làm IPA nguồn cho lượt ký, không cần khách tải file lên. */
@@ -46,7 +57,10 @@ export class CertSignController {
   @HttpCode(200)
   @Put('jobs/:id/quick-app/:slug')
   async putQuickApp(@Req() req: Authed, @Param('id') id: string, @Param('slug') slug: string) {
-    const found = await this.quickApps.path(slug);
+    const found =
+      slug === MAIN_SLUG
+        ? await this.apps.info().then((a) => (a ? { path: a.path, info: a } : null))
+        : await this.quickApps.path(slug);
     if (!found) throw new NotFoundException('Không tìm thấy app này');
     await this.sign.useAppFile(this.sign.get(id, req.user.id), found.path, {
       bundleId: found.info.bundleId ?? '',
