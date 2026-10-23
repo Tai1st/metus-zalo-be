@@ -20,6 +20,7 @@ import { SchedulesModule } from './modules/schedules/schedules.module';
 import { LeadsModule } from './modules/leads/leads.module';
 import { FriendRequestsModule } from './modules/friend-requests/friend-requests.module';
 import { StatsModule } from './modules/stats/stats.module';
+import { CertShopModule } from './modules/cert-shop/cert-shop.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { StatsModule } from './modules/stats/stats.module';
     LeadsModule,
     FriendRequestsModule,
     StatsModule,
+    CertShopModule,
   ],
   controllers: [HealthController],
   providers: [

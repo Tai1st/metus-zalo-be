@@ -7,7 +7,10 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    // webhook của chungchi.store cần body gốc để kiểm chữ ký
+    rawBody: true,
+  });
   const config = app.get(ConfigService);
 
   app.setGlobalPrefix('api');

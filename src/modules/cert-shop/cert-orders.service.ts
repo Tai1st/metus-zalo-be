@@ -1,0 +1,120 @@
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { randomBytes, randomInt } from 'node:crypto';
+import { CertSettingsService, ShopSettings } from './cert-settings.service';
+import { ChungchiClient, ProviderError, ProviderOrder } from './chungchi.client';
+import {
+  CertOrder,
+  CertOrderDocument,
+  CertOrderStatus,
+} from './schemas/cert-order.schema';
+
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+@Injectable()
+export class CertOrdersService {
+  constructor(
+    @InjectModel(CertOrder.name)
+    private readonly model: Model<CertOrderDocument>,
+    private readonly provider: ChungchiClient,
+  ) {}
+
+  /** Giá bán = giá gốc * hệ số, làm tròn lên. */
+  sellPrice(cost: number, s: Pick<ShopSettings, 'priceMarkup' | 'priceRoundTo'>): number {
+    return Math.ceil((cost * s.priceMarkup) / s.priceRoundTo) * s.priceRoundTo;
+  }
+
+  newCode(): string {
+    let s = 'MC';
+    for (let i = 0; i < 6; i++) s += ALPHABET[randomInt(ALPHABET.length)];
+    return s;
+  }
+
+  newP12Password(): string {
+    return randomBytes(4).toString('hex');
+  }
+
+  /** Thông tin thanh toán chuyển khoản (VietQR) cho một đơn. */
+  payment(order: { price: number; code: string }, s: ShopSettings) {
+    const id = s.bankId;
+    const no = s.bankAccountNo;
+    const name = s.bankAccountName;
+    return {
+      bankId: id,
+      accountNo: no,
+      accountName: name,
+      amount: order.price,
+      content: order.code,
+      qrUrl: no
+        ? `https://img.vietqr.io/image/${id}-${no}-compact2.png?amount=${order.price}` +
+          `&addInfo=${encodeURIComponent(order.code)}&accountName=${encodeURIComponent(name)}`
+        : '',
+    };
+  }
+
+  /**
+   * Đã nhận tiền → gửi đơn sang nhà cung cấp. Idempotent: chuyển trạng thái nguyên tử
+   * để không gọi nhà cung cấp (trừ ví) hai lần.
+   */
+  async fulfill(orderId: string) {
+    const order = await this.model.findOneAndUpdate(
+      {
+        _id: orderId,
+        status: {
+          $in: [
+            CertOrderStatus.AwaitingPayment,
+            CertOrderStatus.Paid,
+          ],
+        },
+        providerOrderCode: { $in: [null, ''] },
+      },
+      { status: CertOrderStatus.Provisioning, paidAt: new Date(), error: '' },
+      { new: true },
+    );
+    if (!order) return this.model.findById(orderId);
+
+    try {
+      const po = await this.provider.createOrder({
+        plan_id: order.planId,
+        udid: order.udid,
+        device: order.device,
+        p12_password: order.p12Password,
+      });
+      order.providerOrderCode = po.order_code;
+      this.apply(order, po);
+    } catch (e) {
+      // Chưa tạo được đơn bên nhà cung cấp: giữ "paid" để admin bấm gửi lại.
+      order.status = CertOrderStatus.Paid;
+      order.error =
+        e instanceof ProviderError
+          ? `${e.code}: ${e.message}`
+          : 'Lỗi không xác định';
+    }
+    await order.save();
+    return order;
+  }
+
+  /** Đồng bộ trạng thái đơn từ nhà cung cấp (webhook + polling dự phòng). */
+  async syncFromProvider(providerOrderCode: string) {
+    const order = await this.model.findOne({ providerOrderCode });
+    if (!order) return null;
+    this.apply(order, await this.provider.getOrder(providerOrderCode));
+    await order.save();
+    return order;
+  }
+
+  private apply(order: CertOrderDocument, po: ProviderOrder) {
+    if (po.status === 'completed') {
+      order.status = CertOrderStatus.Completed;
+      if (po.download_url) order.downloadUrl = po.download_url;
+      order.error = '';
+    } else if (po.status === 'failed') {
+      order.status = CertOrderStatus.Failed;
+    } else if (po.status === 'cancelled') {
+      order.status = CertOrderStatus.Cancelled;
+    } else {
+      order.status = CertOrderStatus.Provisioning;
+    }
+  }
+}

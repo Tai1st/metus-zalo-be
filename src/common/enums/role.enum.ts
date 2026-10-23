@@ -5,4 +5,7 @@ export enum Role {
    * `User` để không lẫn với người dùng của các tính năng khác (gói cước…). */
   Staff = 'staff',
   Admin = 'admin',
+  /** Khách của shop chứng chỉ (cert-shop): có tài khoản chung nhưng không có gói Zalo,
+   * nên không dùng được API Zalo (planAccessOk chặn) và không lẫn vào danh sách khách Zalo. */
+  Shop = 'shop',
 }
