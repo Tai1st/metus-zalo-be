@@ -1,4 +1,4 @@
-import { BadGatewayException, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { CertSettingsService } from './cert-settings.service';
 
 export interface ProviderPlan {
@@ -18,7 +18,11 @@ export interface ProviderOrder {
   download_url?: string;
 }
 
-export class ProviderError extends BadGatewayException {
+/**
+ * Lỗi từ nhà cung cấp. Dùng 424 thay vì 502: Cloudflare thay mọi 502 từ origin bằng trang chữ
+ * "error code: 502" nên giao diện không đọc được thông báo lỗi.
+ */
+export class ProviderError extends HttpException {
   constructor(
     public readonly code: string,
     message: string,
@@ -27,6 +31,7 @@ export class ProviderError extends BadGatewayException {
       code === 'INSUFFICIENT_BALANCE'
         ? 'Hệ thống tạm hết số dư để xử lý đơn, vui lòng liên hệ admin'
         : message,
+      HttpStatus.FAILED_DEPENDENCY,
     );
   }
 }
