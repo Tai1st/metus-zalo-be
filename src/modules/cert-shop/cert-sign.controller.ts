@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  NotFoundException,
   Param,
   Post,
   Put,
@@ -16,6 +17,7 @@ import type { Request, Response } from 'express';
 import { createReadStream } from 'node:fs';
 import { Public } from '../../common/decorators/public.decorator';
 import { Role } from '../../common/enums/role.enum';
+import { CertQuickAppService } from './cert-quick-app.service';
 import { CertShopGuard, ShopUser } from './cert-shop.guard';
 import { CertSignService } from './cert-sign.service';
 import { StartSignDto } from './dto/cert-shop.dto';
@@ -26,7 +28,33 @@ type Authed = Request & { user: ShopUser };
 @Public()
 @Controller('cert-shop/sign')
 export class CertSignController {
-  constructor(private readonly sign: CertSignService) {}
+  constructor(
+    private readonly sign: CertSignService,
+    private readonly quickApps: CertQuickAppService,
+  ) {}
+
+  // Các app tiện ích có sẵn (vd ESign) để chọn nhanh làm nguồn ký, thay vì tự tải file lên.
+  @UseGuards(CertShopGuard)
+  @Get('quick-apps')
+  listQuickApps() {
+    return this.quickApps.list();
+  }
+
+  /** Dùng một app có sẵn trên server làm IPA nguồn cho lượt ký, không cần khách tải file lên. */
+  @UseGuards(CertShopGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(200)
+  @Put('jobs/:id/quick-app/:slug')
+  async putQuickApp(@Req() req: Authed, @Param('id') id: string, @Param('slug') slug: string) {
+    const found = await this.quickApps.path(slug);
+    if (!found) throw new NotFoundException('Không tìm thấy app này');
+    await this.sign.useAppFile(this.sign.get(id, req.user.id), found.path, {
+      bundleId: found.info.bundleId ?? '',
+      name: found.info.name,
+      version: found.info.version ?? '',
+    });
+    return { ok: true, app: found.info };
+  }
 
   private async assertReady() {
     if (!(await this.sign.ready())) throw new ServiceUnavailableException('Công cụ ký chưa sẵn sàng, vui lòng quay lại sau');

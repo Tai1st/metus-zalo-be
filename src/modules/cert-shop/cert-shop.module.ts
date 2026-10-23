@@ -16,7 +16,9 @@ import { CertShopGuard } from './cert-shop.guard';
 import { ChungchiClient } from './chungchi.client';
 import { CertEnroll, CertEnrollSchema } from './schemas/cert-enroll.schema';
 import { CertOrder, CertOrderSchema } from './schemas/cert-order.schema';
+import { CertQuickApp, CertQuickAppSchema } from './schemas/cert-quick-app.schema';
 import { CertSetting, CertSettingSchema } from './schemas/cert-setting.schema';
+import { CertQuickAppService } from './cert-quick-app.service';
 
 /** Shop bán chứng chỉ iOS. Dùng chung users với Zalo; dữ liệu riêng nằm ở các collection cert_*. */
 @Module({
@@ -26,6 +28,7 @@ import { CertSetting, CertSettingSchema } from './schemas/cert-setting.schema';
       { name: CertOrder.name, schema: CertOrderSchema },
       { name: CertEnroll.name, schema: CertEnrollSchema },
       { name: CertSetting.name, schema: CertSettingSchema },
+      { name: CertQuickApp.name, schema: CertQuickAppSchema },
     ]),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -38,6 +41,15 @@ import { CertSetting, CertSettingSchema } from './schemas/cert-setting.schema';
     }),
   ],
   controllers: [CertAuthController, CertShopController, CertSignController, CertAdminController],
-  providers: [ChungchiClient, CertAppService, CertCheckService, CertSignService, CertOrdersService, CertSettingsService, CertShopGuard],
+  providers: [
+    ChungchiClient,
+    CertAppService,
+    CertQuickAppService,
+    CertCheckService,
+    CertSignService,
+    CertOrdersService,
+    CertSettingsService,
+    CertShopGuard,
+  ],
 })
 export class CertShopModule {}

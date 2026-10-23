@@ -5,6 +5,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  ServiceUnavailableException,
   HttpCode,
   NotFoundException,
   Param,
@@ -24,6 +25,7 @@ import { Readable } from 'node:stream';
 import { Public } from '../../common/decorators/public.decorator';
 import { Role } from '../../common/enums/role.enum';
 import { CertAppService } from './cert-app.service';
+import { CertSignService } from './cert-sign.service';
 import { CertCheckService } from './cert-check.service';
 import { CertOrdersService } from './cert-orders.service';
 import { CertSettingsService, ShopSettings } from './cert-settings.service';
@@ -54,6 +56,7 @@ export class CertShopController {
     private readonly provider: ChungchiClient,
     private readonly orders: CertOrdersService,
     private readonly apps: CertAppService,
+    private readonly signer: CertSignService,
     private readonly checker: CertCheckService,
     @InjectModel(CertOrder.name) private readonly orderModel: Model<CertOrderDocument>,
     @InjectModel(CertEnroll.name) private readonly enrollModel: Model<CertEnrollDocument>,
@@ -276,6 +279,39 @@ export class CertShopController {
   @Post('check')
   checkFile(@Body() dto: CheckCertDto) {
     return this.checker.check(dto.zip, dto.password);
+  }
+
+  /**
+   * "Cài đặt" một chạm: tự lấy đơn chứng chỉ đã hoàn tất gần nhất của khách, tải chứng chỉ từ nhà cung
+   * cấp, ký app của shop bằng chính chứng chỉ đó rồi trả về lượt ký để khách theo dõi như ký thủ công.
+   * Khách không cần tự tải cert hay nhập mật khẩu.
+   */
+  @UseGuards(CertShopGuard)
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('app/install')
+  async installApp(@Req() req: Authed) {
+    const appInfo = await this.apps.info();
+    if (!appInfo) throw new NotFoundException('Chưa có ứng dụng để cài');
+    if (!(await this.signer.ready())) {
+      throw new ServiceUnavailableException('Công cụ ký chưa sẵn sàng, vui lòng quay lại sau');
+    }
+    const order = await this.orderModel
+      .findOne({ userId: req.user.id, status: CertOrderStatus.Completed })
+      .sort({ createdAt: -1 });
+    if (!order) throw new ForbiddenException('Cần mua chứng chỉ để cài đặt');
+    if (!order.downloadUrl) throw new ConflictException('Đơn chưa có file chứng chỉ để dùng');
+
+    const upstream = await this.provider.download(order.downloadUrl);
+    if (!upstream.ok || !upstream.body) throw new NotFoundException('Không tải được chứng chỉ từ nhà cung cấp');
+    const certZip = Buffer.from(await upstream.arrayBuffer());
+
+    // Nếu nạp IPA hoặc chứng chỉ lỗi giữa chừng, lỗi lan thẳng ra ngoài; job dở dang tự hết hạn theo TTL như các lượt ký thủ công khác.
+    const job = await this.signer.create(req.user.id);
+    await this.signer.useAppFile(job, appInfo.path, { bundleId: appInfo.bundleId, name: appInfo.name, version: appInfo.version });
+    await this.signer.useCertZipBuffer(job, certZip);
+    this.signer.start(job, { password: order.p12Password }, req.user.role === Role.Admin);
+    return { jobId: job.id };
   }
 
   // ---- webhook nhà cung cấp ----

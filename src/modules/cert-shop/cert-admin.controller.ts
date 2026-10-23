@@ -21,6 +21,7 @@ import { Model } from 'mongoose';
 import { Public } from '../../common/decorators/public.decorator';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { CertAppService } from './cert-app.service';
+import { CertQuickAppService } from './cert-quick-app.service';
 import { CertOrdersService } from './cert-orders.service';
 import { CertSettingsService } from './cert-settings.service';
 import { CertAdmin, CertShopGuard } from './cert-shop.guard';
@@ -45,6 +46,7 @@ export class CertAdminController {
     private readonly orders: CertOrdersService,
     private readonly settings: CertSettingsService,
     private readonly apps: CertAppService,
+    private readonly quickApps: CertQuickAppService,
     @InjectModel(CertOrder.name) private readonly orderModel: Model<CertOrderDocument>,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
   ) {}
@@ -152,6 +154,27 @@ export class CertAdminController {
   @Delete('app')
   async removeApp() {
     await this.apps.remove();
+    return { ok: true };
+  }
+
+  // ---- app ký nhanh (vd ESign) để khách chọn ở trang Ký IPA ----
+  @Get('quick-apps')
+  listQuickApps() {
+    return this.quickApps.list();
+  }
+
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('quick-apps/:slug')
+  async uploadQuickApp(@Req() req: Request, @Param('slug') slug: string, @Query('name') name?: string) {
+    const r = await this.quickApps.upload(slug, name ?? slug, req);
+    return { ok: true, ...r };
+  }
+
+  @HttpCode(200)
+  @Delete('quick-apps/:slug')
+  async removeQuickApp(@Param('slug') slug: string) {
+    await this.quickApps.remove(slug);
     return { ok: true };
   }
 

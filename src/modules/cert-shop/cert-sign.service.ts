@@ -12,7 +12,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { access, chown, mkdir, open, readdir, rm, stat } from 'node:fs/promises';
+import { access, chown, copyFile, mkdir, open, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import type { Readable } from 'node:stream';
@@ -239,7 +239,16 @@ export class CertSignService implements OnModuleInit, OnModuleDestroy {
     try {
       await streamToFile(stream, zip, this.maxCertBytes);
       await this.checkZipMagic(zip, 'Gói chứng chỉ phải là file .zip');
-      const r = JSON.parse(await run(this.python, ['-I', '-c', PY_CERT, zip, job.dir]));
+      await this.ingestCertZip(job, zip);
+    } finally {
+      await rm(zip, { force: true });
+    }
+  }
+
+  /** Tách .p12 và .mobileprovision từ một file zip đã nằm sẵn trên đĩa. */
+  private async ingestCertZip(job: Job, zipPath: string) {
+    try {
+      const r = JSON.parse(await run(this.python, ['-I', '-c', PY_CERT, zipPath, job.dir]));
       if (r.error) throw new BadRequestException(r.error);
       await this.give(join(job.dir, 'cert.p12'));
       await this.give(join(job.dir, 'prov.mobileprovision'));
@@ -249,8 +258,32 @@ export class CertSignService implements OnModuleInit, OnModuleDestroy {
       job.hasP12 = false;
       job.hasProf = false;
       throw e;
+    }
+  }
+
+  /**
+   * Nạp IPA đã có sẵn trên server (vd app chính của shop) làm nguồn ký, không qua upload của khách.
+   * Dùng cho nút "Cài đặt" một chạm: ký app của shop bằng chứng chỉ khách đã mua.
+   */
+  async useAppFile(job: Job, filePath: string, meta: AppMeta) {
+    this.mustBe(job, 'created');
+    const dest = join(job.dir, 'in.ipa');
+    await copyFile(filePath, dest);
+    await this.give(dest);
+    job.source = meta;
+    job.hasIpa = true;
+  }
+
+  /** Nạp gói chứng chỉ (.zip) đã có sẵn trong bộ nhớ (vd tải về từ nhà cung cấp), không qua upload của khách. */
+  async useCertZipBuffer(job: Job, zip: Buffer) {
+    this.mustBe(job, 'created');
+    const zpath = join(job.dir, 'cert.zip');
+    try {
+      await writeFile(zpath, zip, { mode: 0o600 });
+      await this.checkZipMagic(zpath, 'Gói chứng chỉ không hợp lệ');
+      await this.ingestCertZip(job, zpath);
     } finally {
-      await rm(zip, { force: true });
+      await rm(zpath, { force: true });
     }
   }
 
