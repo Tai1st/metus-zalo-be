@@ -64,6 +64,7 @@ export class CertShopController {
         receiveTime: p.receive_time ?? '',
         validity: p.validity ?? '',
         warranty: p.warranty ?? '',
+        features: s.planFeatures,
         price: this.orders.sellPrice(p.amount, s),
         currency: 'VND',
       })),

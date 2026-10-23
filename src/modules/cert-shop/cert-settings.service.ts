@@ -13,12 +13,19 @@ export interface ShopSettings {
   bankAccountName: string;
   priceMarkup: number;
   priceRoundTo: number;
+  planFeatures: string[];
   chungchiBaseUrl: string;
   chungchiApiKey: string;
   webhookSecret: string;
 }
 
 const CACHE_MS = 15_000;
+
+export const DEFAULT_PLAN_FEATURES = [
+  'Phù hợp mọi thiết bị, mọi OS.',
+  'Hỗ trợ App group, thông báo đẩy, VPN/network, Siri...',
+  'Cài và nhân bản app không giới hạn.',
+];
 
 /**
  * Đọc cấu hình từ DB, trường nào chưa đặt thì lấy từ env, rồi mặc định.
@@ -56,6 +63,7 @@ export class CertSettingsService {
       bankAccountName: d?.bankAccountName || env('CERT_BANK_ACCOUNT_NAME', ''),
       priceMarkup: d?.priceMarkup ?? Number(env('CERT_PRICE_MARKUP', 1.3)),
       priceRoundTo: d?.priceRoundTo ?? Number(env('CERT_PRICE_ROUND_TO', 1000)),
+      planFeatures: d?.planFeatures?.length ? d.planFeatures : DEFAULT_PLAN_FEATURES,
       chungchiBaseUrl: (d?.chungchiBaseUrl || env('CHUNGCHI_BASE_URL', 'https://chungchi.store')).replace(/\/$/, ''),
       chungchiApiKey: dec(d?.chungchiApiKeyEnc) || env('CHUNGCHI_API_KEY', ''),
       webhookSecret: dec(d?.webhookSecretEnc) || env('CHUNGCHI_WEBHOOK_SECRET', ''),
@@ -74,6 +82,7 @@ export class CertSettingsService {
       bankAccountName: s.bankAccountName,
       priceMarkup: s.priceMarkup,
       priceRoundTo: s.priceRoundTo,
+      planFeatures: s.planFeatures,
       chungchiBaseUrl: s.chungchiBaseUrl,
       hasApiKey: Boolean(s.chungchiApiKey),
       apiKeyHint: s.chungchiApiKey ? `…${s.chungchiApiKey.slice(-4)}` : '',
@@ -83,6 +92,7 @@ export class CertSettingsService {
 
   async update(dto: UpdateCertSettingsDto) {
     const set: Record<string, unknown> = {};
+    const unset: Record<string, ''> = {};
     const plain = [
       'siteUrl',
       'bankId',
@@ -93,11 +103,21 @@ export class CertSettingsService {
       'chungchiBaseUrl',
     ] as const;
     for (const k of plain) if (dto[k] !== undefined) set[k] = dto[k];
+    if (dto.planFeatures !== undefined) {
+      const lines = dto.planFeatures.map((l) => l.trim()).filter(Boolean);
+      // Danh sách rỗng = quay về mặc định
+      if (lines.length) set.planFeatures = lines;
+      else unset.planFeatures = '';
+    }
     // Khóa bí mật: chuỗi rỗng = giữ nguyên; chỉ ghi khi admin nhập giá trị mới.
     if (dto.chungchiApiKey) set.chungchiApiKeyEnc = encryptSecret(dto.chungchiApiKey, this.secret);
     if (dto.webhookSecret) set.webhookSecretEnc = encryptSecret(dto.webhookSecret, this.secret);
 
-    await this.model.updateOne({ key: 'main' }, { $set: set, $setOnInsert: { key: 'main' } }, { upsert: true });
+    await this.model.updateOne(
+      { key: 'main' },
+      { $set: set, ...(Object.keys(unset).length && { $unset: unset }), $setOnInsert: { key: 'main' } },
+      { upsert: true },
+    );
     this.cache = undefined;
     return this.view();
   }

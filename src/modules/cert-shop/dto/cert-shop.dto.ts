@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsIn,
   IsInt,
   IsNumber,
@@ -58,6 +60,10 @@ export class UpdateCertSettingsDto {
 
   @IsOptional() @Type(() => Number) @IsNumber() @Min(1) @Max(10) priceMarkup?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(1_000_000) priceRoundTo?: number;
+
+  /** Mỗi phần tử một dòng mô tả quyền lợi của gói. */
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @IsString({ each: true }) @MaxLength(200, { each: true })
+  planFeatures?: string[];
 
   @IsOptional() @IsUrl() @MaxLength(200) chungchiBaseUrl?: string;
   /** Rỗng/không gửi = giữ khóa hiện tại. */

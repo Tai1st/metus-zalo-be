@@ -17,6 +17,9 @@ export class CertSetting {
   @Prop() priceMarkup?: number;
   @Prop() priceRoundTo?: number;
 
+  /** Các dòng mô tả quyền lợi hiển thị trên thẻ gói (API nhà cung cấp không có mô tả). */
+  @Prop({ type: [String], default: undefined }) planFeatures?: string[];
+
   @Prop() chungchiBaseUrl?: string;
   /** Mã hóa AES-256-GCM bằng COOKIE_SECRET, không bao giờ trả ra ngoài. */
   @Prop() chungchiApiKeyEnc?: string;
