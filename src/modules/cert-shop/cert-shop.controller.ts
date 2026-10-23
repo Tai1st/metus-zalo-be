@@ -29,7 +29,7 @@ import { CertSignService } from './cert-sign.service';
 import { CertCheckService } from './cert-check.service';
 import { CertOrdersService } from './cert-orders.service';
 import { CertSettingsService, ShopSettings } from './cert-settings.service';
-import { CertShopGuard, ShopUser } from './cert-shop.guard';
+import { CertShopGuard, OptionalAuth, ShopUser } from './cert-shop.guard';
 import { ChungchiClient } from './chungchi.client';
 import { CheckCertDto, CreateOrderDto } from './dto/cert-shop.dto';
 import { CertEnroll, CertEnrollDocument } from './schemas/cert-enroll.schema';
@@ -212,9 +212,12 @@ export class CertShopController {
   }
 
   // ---- app Metus (IPA chưa ký) cho khách đã có chứng chỉ ----
+  // Không bắt buộc đăng nhập: trang Kho ứng dụng vẫn hiện được thông tin app cho khách chưa mua/chưa đăng nhập,
+  // chỉ nút tải (canDownload) mới cần chứng chỉ.
   @UseGuards(CertShopGuard)
+  @OptionalAuth()
   @Get('app')
-  async app(@Req() req: Authed) {
+  async app(@Req() req: Request & { user?: ShopUser }) {
     const a = await this.apps.info();
     if (!a) return { available: false };
     return {
@@ -224,7 +227,7 @@ export class CertShopController {
       bundleId: a.bundleId,
       minOs: a.minOs,
       size: a.size,
-      canDownload: await this.canDownloadApp(req.user),
+      canDownload: req.user ? await this.canDownloadApp(req.user) : false,
     };
   }
 

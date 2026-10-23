@@ -14,8 +14,11 @@ import { UsersService } from '../users/users.service';
 
 export const SESSION_COOKIE = 'cert_session';
 const ADMIN_KEY = 'certShopAdmin';
+const OPTIONAL_KEY = 'certShopOptional';
 /** Chỉ Role.Admin (cùng admin của Zalo) được gọi. */
 export const CertAdmin = () => SetMetadata(ADMIN_KEY, true);
+/** Không bắt buộc đăng nhập: có phiên hợp lệ thì gắn req.user, không có thì cho qua với user = undefined. */
+export const OptionalAuth = () => SetMetadata(OPTIONAL_KEY, true);
 
 export type ShopUser = { id: string; username: string; role: Role };
 
@@ -45,21 +48,30 @@ export class CertShopGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<Request & { user?: ShopUser }>();
+    const optional = this.reflector.getAllAndOverride<boolean>(OPTIONAL_KEY, [
+      ctx.getHandler(),
+      ctx.getClass(),
+    ]);
     const bearer = req.headers.authorization?.startsWith('Bearer ')
       ? req.headers.authorization.slice(7)
       : undefined;
     const token = bearer ?? readCookie(req.headers.cookie, SESSION_COOKIE);
-    if (!token) throw new UnauthorizedException('Chưa đăng nhập');
+    if (!token) {
+      if (optional) return true;
+      throw new UnauthorizedException('Chưa đăng nhập');
+    }
 
     let sub: string;
     try {
       sub = (await this.jwt.verifyAsync<{ sub: string }>(token)).sub;
     } catch {
+      if (optional) return true;
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ');
     }
     // Đọc lại user để tài khoản bị khóa/xóa mất hiệu lực ngay.
     const user = await this.users.findById(sub);
     if (!user || !user.isActive || user.role === Role.Staff) {
+      if (optional) return true;
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ');
     }
     req.user = { id: String(user._id), username: user.username, role: user.role };
