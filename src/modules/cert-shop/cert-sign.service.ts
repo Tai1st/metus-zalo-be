@@ -170,8 +170,20 @@ export class CertSignService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ---- vòng đời job ----
+  /** Job "created" bỏ dở (chọn file xong không ký tiếp) chỉ chiếm chỗ trong khoảng này, không giữ cả giờ TTL. */
+  private readonly createdGraceMs = 10 * 60 * 1000;
+
   create(userId: string): Promise<Job> {
-    const active = [...this.jobs.values()].filter((j) => j.userId === userId && j.expiresAt > Date.now()).length;
+    const now = Date.now();
+    // Job đã xong (done/failed) hoặc "created" bỏ dở quá lâu không còn thực sự "đang ký" nên không tính vào giới hạn đồng thời.
+    const active = [...this.jobs.values()].filter(
+      (j) =>
+        j.userId === userId &&
+        j.expiresAt > now &&
+        j.state !== 'done' &&
+        j.state !== 'failed' &&
+        (j.state !== 'created' || j.createdAt > now - this.createdGraceMs),
+    ).length;
     if (active >= 3) throw new ConflictException('Bạn đang có quá nhiều lượt ký chưa hoàn tất, vui lòng đợi hoặc thử lại sau');
     return this.makeJob(userId);
   }
