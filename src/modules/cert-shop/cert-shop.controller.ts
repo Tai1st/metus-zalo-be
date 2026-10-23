@@ -25,6 +25,7 @@ import { Readable } from 'node:stream';
 import { Public } from '../../common/decorators/public.decorator';
 import { Role } from '../../common/enums/role.enum';
 import { CertAppService } from './cert-app.service';
+import { CertQuickAppService } from './cert-quick-app.service';
 import { CertSignService } from './cert-sign.service';
 import { CertCheckService } from './cert-check.service';
 import { CertOrdersService } from './cert-orders.service';
@@ -56,6 +57,7 @@ export class CertShopController {
     private readonly provider: ChungchiClient,
     private readonly orders: CertOrdersService,
     private readonly apps: CertAppService,
+    private readonly quickApps: CertQuickAppService,
     private readonly signer: CertSignService,
     private readonly checker: CertCheckService,
     @InjectModel(CertOrder.name) private readonly orderModel: Model<CertOrderDocument>,
@@ -284,10 +286,52 @@ export class CertShopController {
     return this.checker.check(dto.zip, dto.password);
   }
 
+  // ---- Kho ứng dụng: app chính (Metus) + các app ký nhanh (vd ESign), cùng điều kiện mở khóa ----
+  @UseGuards(CertShopGuard)
+  @OptionalAuth()
+  @Get('apps')
+  async apps_(@Req() req: Request & { user?: ShopUser }) {
+    const [main, quicks] = await Promise.all([this.apps.info(), this.quickApps.list()]);
+    const canDownload = req.user ? await this.canDownloadApp(req.user) : false;
+    const items = [
+      ...(main
+        ? [
+            {
+              slug: 'metus',
+              kind: 'main' as const,
+              name: main.name,
+              version: main.version,
+              bundleId: main.bundleId,
+              minOs: main.minOs,
+              size: main.size,
+              canDownload,
+            },
+          ]
+        : []),
+      ...quicks.map((q) => ({ ...q, kind: 'quick' as const, canDownload })),
+    ];
+    return { items };
+  }
+
+  @UseGuards(CertShopGuard)
+  @Get('quick-apps/:slug/download')
+  async downloadQuickApp(@Req() req: Authed, @Param('slug') slug: string, @Res() res: Response) {
+    const found = await this.quickApps.path(slug);
+    if (!found) throw new NotFoundException('Không tìm thấy app này');
+    if (!(await this.canDownloadApp(req.user))) throw new ForbiddenException('Cần mua chứng chỉ để tải ứng dụng');
+    const safe = `${found.info.name}-${found.info.version ?? ''}`.replace(/[^A-Za-z0-9._-]+/g, '-');
+    res.set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${safe}.ipa"`,
+      'Cache-Control': 'no-store',
+    });
+    createReadStream(found.path).on('error', () => res.destroy()).pipe(res);
+  }
+
   /**
    * "Cài đặt" một chạm: tự lấy đơn chứng chỉ đã hoàn tất gần nhất của khách, tải chứng chỉ từ nhà cung
-   * cấp, ký app của shop bằng chính chứng chỉ đó rồi trả về lượt ký để khách theo dõi như ký thủ công.
-   * Khách không cần tự tải cert hay nhập mật khẩu.
+   * cấp, ký app bằng chính chứng chỉ đó rồi trả về lượt ký để khách theo dõi như ký thủ công.
+   * Khách không cần tự tải cert hay nhập mật khẩu. Dùng chung cho app chính và các app ký nhanh.
    */
   @UseGuards(CertShopGuard)
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
@@ -296,12 +340,32 @@ export class CertShopController {
   async installApp(@Req() req: Authed) {
     const appInfo = await this.apps.info();
     if (!appInfo) throw new NotFoundException('Chưa có ứng dụng để cài');
+    return this.installFromServer(req.user, appInfo.path, {
+      bundleId: appInfo.bundleId,
+      name: appInfo.name,
+      version: appInfo.version,
+    });
+  }
+
+  @UseGuards(CertShopGuard)
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('quick-apps/:slug/install')
+  async installQuickApp(@Req() req: Authed, @Param('slug') slug: string) {
+    const found = await this.quickApps.path(slug);
+    if (!found) throw new NotFoundException('Không tìm thấy app này');
+    return this.installFromServer(req.user, found.path, {
+      bundleId: found.info.bundleId ?? '',
+      name: found.info.name,
+      version: found.info.version ?? '',
+    });
+  }
+
+  private async installFromServer(user: ShopUser, filePath: string, meta: { bundleId: string; name: string; version: string }) {
     if (!(await this.signer.ready())) {
       throw new ServiceUnavailableException('Công cụ ký chưa sẵn sàng, vui lòng quay lại sau');
     }
-    const order = await this.orderModel
-      .findOne({ userId: req.user.id, status: CertOrderStatus.Completed })
-      .sort({ createdAt: -1 });
+    const order = await this.orderModel.findOne({ userId: user.id, status: CertOrderStatus.Completed }).sort({ createdAt: -1 });
     if (!order) throw new ForbiddenException('Cần mua chứng chỉ để cài đặt');
     if (!order.downloadUrl) throw new ConflictException('Đơn chưa có file chứng chỉ để dùng');
 
@@ -310,10 +374,10 @@ export class CertShopController {
     const certZip = Buffer.from(await upstream.arrayBuffer());
 
     // Nếu nạp IPA hoặc chứng chỉ lỗi giữa chừng, lỗi lan thẳng ra ngoài; job dở dang tự hết hạn theo TTL như các lượt ký thủ công khác.
-    const job = await this.signer.create(req.user.id);
-    await this.signer.useAppFile(job, appInfo.path, { bundleId: appInfo.bundleId, name: appInfo.name, version: appInfo.version });
+    const job = await this.signer.create(user.id);
+    await this.signer.useAppFile(job, filePath, meta);
     await this.signer.useCertZipBuffer(job, certZip);
-    this.signer.start(job, { password: order.p12Password }, req.user.role === Role.Admin);
+    this.signer.start(job, { password: order.p12Password }, user.role === Role.Admin);
     return { jobId: job.id };
   }
 
