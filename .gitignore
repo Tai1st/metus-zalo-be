@@ -3,3 +3,6 @@ dist
 .env
 *.log
 .DS_Store
+
+# File phát hành của shop chứng chỉ (IPA) nằm trên server, không đưa vào git
+storage/

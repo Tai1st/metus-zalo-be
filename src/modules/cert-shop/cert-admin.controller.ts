@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   ConflictException,
   Controller,
+  Delete,
   Get,
   HttpCode,
   NotFoundException,
@@ -9,12 +11,16 @@ import {
   Post,
   Put,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
 import { Model } from 'mongoose';
 import { Public } from '../../common/decorators/public.decorator';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { CertAppService } from './cert-app.service';
 import { CertOrdersService } from './cert-orders.service';
 import { CertSettingsService } from './cert-settings.service';
 import { CertAdmin, CertShopGuard } from './cert-shop.guard';
@@ -38,6 +44,7 @@ export class CertAdminController {
     private readonly provider: ChungchiClient,
     private readonly orders: CertOrdersService,
     private readonly settings: CertSettingsService,
+    private readonly apps: CertAppService,
     @InjectModel(CertOrder.name) private readonly orderModel: Model<CertOrderDocument>,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
   ) {}
@@ -102,6 +109,50 @@ export class CertAdminController {
   @Put('settings')
   updateSettings(@Body() dto: UpdateCertSettingsDto) {
     return this.settings.update(dto);
+  }
+
+  // ---- ứng dụng (IPA) phát hành cho khách đã mua chứng chỉ ----
+  @Get('app')
+  async getApp() {
+    const a = await this.apps.info();
+    if (!a) return { available: false, maxMb: this.apps.maxBytes / 1048576 };
+    const { path: _path, ...rest } = a;
+    return { available: true, maxMb: this.apps.maxBytes / 1048576, ...rest };
+  }
+
+  /**
+   * Tải IPA lên: body là nội dung file thô (Content-Type: application/octet-stream),
+   * thông tin app đi theo query. Không dùng multipart để ghi thẳng xuống đĩa, không giữ file trong RAM.
+   */
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('app/upload')
+  async uploadApp(
+    @Req() req: Request,
+    @Query('name') name?: string,
+    @Query('version') version?: string,
+    @Query('bundleId') bundleId?: string,
+    @Query('minOs') minOs?: string,
+  ) {
+    const v = (version ?? '').trim();
+    if (!/^[0-9A-Za-z][0-9A-Za-z._-]{0,31}$/.test(v)) {
+      throw new BadRequestException('Phiên bản không hợp lệ (vd: 1.0.2)');
+    }
+    const clean = (s: string | undefined, max: number) => (s ?? '').trim().slice(0, max);
+    const r = await this.apps.saveUpload(req, {
+      name: clean(name, 60) || 'Metus Browser',
+      version: v,
+      bundleId: clean(bundleId, 120),
+      minOs: clean(minOs, 12),
+    });
+    return { ok: true, ...r };
+  }
+
+  @HttpCode(200)
+  @Delete('app')
+  async removeApp() {
+    await this.apps.remove();
+    return { ok: true };
   }
 
   @Get('stats')

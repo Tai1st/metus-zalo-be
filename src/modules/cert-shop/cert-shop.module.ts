@@ -5,9 +5,13 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from '../users/users.module';
 import { CertAdminController } from './cert-admin.controller';
 import { CertAuthController } from './cert-auth.controller';
+import { CertAppService } from './cert-app.service';
+import { CertCheckService } from './cert-check.service';
 import { CertOrdersService } from './cert-orders.service';
 import { CertSettingsService } from './cert-settings.service';
 import { CertShopController } from './cert-shop.controller';
+import { CertSignController } from './cert-sign.controller';
+import { CertSignService } from './cert-sign.service';
 import { CertShopGuard } from './cert-shop.guard';
 import { ChungchiClient } from './chungchi.client';
 import { CertEnroll, CertEnrollSchema } from './schemas/cert-enroll.schema';
@@ -33,7 +37,7 @@ import { CertSetting, CertSettingSchema } from './schemas/cert-setting.schema';
       }),
     }),
   ],
-  controllers: [CertAuthController, CertShopController, CertAdminController],
-  providers: [ChungchiClient, CertOrdersService, CertSettingsService, CertShopGuard],
+  controllers: [CertAuthController, CertShopController, CertSignController, CertAdminController],
+  providers: [ChungchiClient, CertAppService, CertCheckService, CertSignService, CertOrdersService, CertSettingsService, CertShopGuard],
 })
 export class CertShopModule {}

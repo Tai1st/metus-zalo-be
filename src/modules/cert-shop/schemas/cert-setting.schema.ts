@@ -20,6 +20,13 @@ export class CertSetting {
   /** Các dòng mô tả quyền lợi hiển thị trên thẻ gói (API nhà cung cấp không có mô tả). */
   @Prop({ type: [String], default: undefined }) planFeatures?: string[];
 
+  /** App phát hành cho khách đã mua chứng chỉ: tên file nằm trong thư mục lưu trữ của BE. */
+  @Prop() appFile?: string;
+  @Prop() appName?: string;
+  @Prop() appVersion?: string;
+  @Prop() appBundleId?: string;
+  @Prop() appMinOs?: string;
+
   @Prop() chungchiBaseUrl?: string;
   /** Mã hóa AES-256-GCM bằng COOKIE_SECRET, không bao giờ trả ra ngoài. */
   @Prop() chungchiApiKeyEnc?: string;

@@ -14,6 +14,11 @@ export interface ShopSettings {
   priceMarkup: number;
   priceRoundTo: number;
   planFeatures: string[];
+  appFile: string;
+  appName: string;
+  appVersion: string;
+  appBundleId: string;
+  appMinOs: string;
   chungchiBaseUrl: string;
   chungchiApiKey: string;
   webhookSecret: string;
@@ -64,6 +69,11 @@ export class CertSettingsService {
       priceMarkup: d?.priceMarkup ?? Number(env('CERT_PRICE_MARKUP', 1.3)),
       priceRoundTo: d?.priceRoundTo ?? Number(env('CERT_PRICE_ROUND_TO', 1000)),
       planFeatures: d?.planFeatures?.length ? d.planFeatures : DEFAULT_PLAN_FEATURES,
+      appFile: d?.appFile ?? '',
+      appName: d?.appName || 'Metus Browser',
+      appVersion: d?.appVersion ?? '',
+      appBundleId: d?.appBundleId ?? '',
+      appMinOs: d?.appMinOs ?? '',
       chungchiBaseUrl: (d?.chungchiBaseUrl || env('CHUNGCHI_BASE_URL', 'https://chungchi.store')).replace(/\/$/, ''),
       chungchiApiKey: dec(d?.chungchiApiKeyEnc) || env('CHUNGCHI_API_KEY', ''),
       webhookSecret: dec(d?.webhookSecretEnc) || env('CHUNGCHI_WEBHOOK_SECRET', ''),
@@ -88,6 +98,33 @@ export class CertSettingsService {
       apiKeyHint: s.chungchiApiKey ? `…${s.chungchiApiKey.slice(-4)}` : '',
       hasWebhookSecret: Boolean(s.webhookSecret),
     };
+  }
+
+  /** Ghi thông tin app đã tải lên (gọi sau khi file đã nằm đúng chỗ). */
+  async saveApp(app: { file: string; name: string; version: string; bundleId: string; minOs: string }) {
+    await this.model.updateOne(
+      { key: 'main' },
+      {
+        $set: {
+          appFile: app.file,
+          appName: app.name,
+          appVersion: app.version,
+          appBundleId: app.bundleId,
+          appMinOs: app.minOs,
+        },
+        $setOnInsert: { key: 'main' },
+      },
+      { upsert: true },
+    );
+    this.cache = undefined;
+  }
+
+  async clearApp() {
+    await this.model.updateOne(
+      { key: 'main' },
+      { $unset: { appFile: '', appName: '', appVersion: '', appBundleId: '', appMinOs: '' } },
+    );
+    this.cache = undefined;
   }
 
   async update(dto: UpdateCertSettingsDto) {

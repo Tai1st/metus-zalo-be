@@ -50,6 +50,11 @@ export class ShopLoginDto {
 export class CreateOrderDto {
   @IsString() @MinLength(1) @MaxLength(128) enrollToken: string;
   @IsString() @MinLength(1) @MaxLength(64) planId: string;
+
+  /** Mật khẩu .p12 do khách đặt; bỏ trống thì hệ thống tự tạo ngẫu nhiên. */
+  @IsOptional()
+  @Matches(/^[A-Za-z0-9]{1,32}$/, { message: 'Mật khẩu chứng chỉ chỉ gồm chữ và số, tối đa 32 ký tự' })
+  p12Password?: string;
 }
 
 export class UpdateCertSettingsDto {
@@ -69,6 +74,24 @@ export class UpdateCertSettingsDto {
   /** Rỗng/không gửi = giữ khóa hiện tại. */
   @IsOptional() @IsString() @MaxLength(300) chungchiApiKey?: string;
   @IsOptional() @IsString() @MaxLength(300) webhookSecret?: string;
+}
+
+export class CheckCertDto {
+  /** Gói chứng chỉ .zip mã hóa base64 (tối đa khoảng 1MB sau khi giải mã). */
+  @IsString() @MaxLength(1_500_000) zip: string;
+
+  @IsString() @MaxLength(128) password: string;
+}
+
+export class StartSignDto {
+  /** Mật khẩu .p12 (có thể để trống nếu chứng chỉ không đặt mật khẩu). */
+  @IsString() @MaxLength(128) password: string;
+
+  @IsOptional()
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9.-]{0,100}$/, { message: 'Bundle ID chỉ gồm chữ, số, dấu chấm và gạch ngang' })
+  bundleId?: string;
+
+  @IsOptional() @IsString() @MaxLength(60) name?: string;
 }
 
 export class AdminOrdersQuery {

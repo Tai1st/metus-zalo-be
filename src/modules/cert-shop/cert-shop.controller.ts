@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -18,14 +19,17 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { Public } from '../../common/decorators/public.decorator';
 import { Role } from '../../common/enums/role.enum';
+import { CertAppService } from './cert-app.service';
+import { CertCheckService } from './cert-check.service';
 import { CertOrdersService } from './cert-orders.service';
 import { CertSettingsService, ShopSettings } from './cert-settings.service';
 import { CertShopGuard, ShopUser } from './cert-shop.guard';
 import { ChungchiClient } from './chungchi.client';
-import { CreateOrderDto } from './dto/cert-shop.dto';
+import { CheckCertDto, CreateOrderDto } from './dto/cert-shop.dto';
 import { CertEnroll, CertEnrollDocument } from './schemas/cert-enroll.schema';
 import {
   CertOrder,
@@ -49,6 +53,8 @@ export class CertShopController {
     private readonly settings: CertSettingsService,
     private readonly provider: ChungchiClient,
     private readonly orders: CertOrdersService,
+    private readonly apps: CertAppService,
+    private readonly checker: CertCheckService,
     @InjectModel(CertOrder.name) private readonly orderModel: Model<CertOrderDocument>,
     @InjectModel(CertEnroll.name) private readonly enrollModel: Model<CertEnrollDocument>,
   ) {}
@@ -133,7 +139,7 @@ export class CertShopController {
       costAmount: plan.amount,
       costCurrency: plan.currency,
       price: this.orders.sellPrice(plan.amount, s),
-      p12Password: this.orders.newP12Password(),
+      p12Password: dto.p12Password || this.orders.newP12Password(),
     });
     await this.enrollModel.deleteOne({ _id: enroll._id });
     return { code: order.code };
@@ -202,6 +208,76 @@ export class CertShopController {
     Readable.fromWeb(upstream.body as never).pipe(res);
   }
 
+  // ---- app Metus (IPA chưa ký) cho khách đã có chứng chỉ ----
+  @UseGuards(CertShopGuard)
+  @Get('app')
+  async app(@Req() req: Authed) {
+    const a = await this.apps.info();
+    if (!a) return { available: false };
+    return {
+      available: true,
+      name: a.name,
+      version: a.version,
+      bundleId: a.bundleId,
+      minOs: a.minOs,
+      size: a.size,
+      canDownload: await this.canDownloadApp(req.user),
+    };
+  }
+
+  @UseGuards(CertShopGuard)
+  @Get('app/download')
+  async appDownload(@Req() req: Authed, @Res() res: Response) {
+    const a = await this.apps.info();
+    if (!a) throw new NotFoundException('Chưa có ứng dụng để tải');
+    if (!(await this.canDownloadApp(req.user))) {
+      throw new ForbiddenException('Cần mua chứng chỉ để tải ứng dụng');
+    }
+    const safe = `${a.name}-${a.version}`.replace(/[^A-Za-z0-9._-]+/g, '-');
+    res.set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(a.size),
+      'Content-Disposition': `attachment; filename="${safe}.ipa"`,
+      'Cache-Control': 'no-store',
+    });
+    createReadStream(a.path).on('error', () => res.destroy()).pipe(res);
+  }
+
+  // ---- tra cứu đơn công khai (UDID hoặc mã đơn) ----
+  /** Chỉ trả trạng thái: không có mật khẩu .p12, link tải hay thông tin tài khoản; UDID được che bớt. */
+  @Throttle({ default: { limit: 12, ttl: 60_000 } })
+  @Get('lookup')
+  async lookup(@Query('q') q?: string) {
+    const key = (q ?? '').trim();
+    if (key.length < 6 || key.length > 64 || !/^[A-Za-z0-9-]+$/.test(key)) {
+      throw new BadRequestException('Nhập UDID hoặc mã đơn hàng hợp lệ');
+    }
+    // Khớp chính xác (không tìm gần đúng) để không dò được đơn của người khác
+    const list = await this.orderModel
+      .find({ $or: [{ code: key.toUpperCase() }, { udid: new RegExp(`^${key.replace(/[^A-Za-z0-9-]/g, '')}$`, 'i') }] })
+      .sort({ createdAt: -1 })
+      .limit(10);
+    const mask = (u: string) => (u.length > 12 ? `${u.slice(0, 8)}…${u.slice(-4)}` : u);
+    return {
+      orders: list.map((o) => ({
+        code: o.code,
+        planTitle: o.planTitle,
+        udid: mask(o.udid),
+        status: o.status,
+        createdAt: (o as unknown as { createdAt: Date }).createdAt,
+      })),
+    };
+  }
+
+  // ---- kiểm tra chứng chỉ từ gói .zip (không cần là chứng chỉ mua ở shop) ----
+  @UseGuards(CertShopGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('check')
+  checkFile(@Body() dto: CheckCertDto) {
+    return this.checker.check(dto.zip, dto.password);
+  }
+
   // ---- webhook nhà cung cấp ----
   @HttpCode(200)
   @Post('webhooks/chungchi')
@@ -230,6 +306,12 @@ export class CertShopController {
   }
 
   // ---- helpers ----
+  /** Admin hoặc khách có ít nhất một đơn chứng chỉ đã hoàn tất. */
+  private async canDownloadApp(user: ShopUser) {
+    if (user.role === Role.Admin) return true;
+    return Boolean(await this.orderModel.exists({ userId: user.id, status: CertOrderStatus.Completed }));
+  }
+
   private async owned(user: ShopUser, code: string) {
     const order = await this.orderModel.findOne({ code });
     if (!order || (user.role !== Role.Admin && order.userId !== user.id)) {
