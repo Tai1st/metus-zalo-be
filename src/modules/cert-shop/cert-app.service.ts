@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdir, open, rename, rm, stat } from 'node:fs/promises';
@@ -7,6 +8,17 @@ import type { Readable } from 'node:stream';
 import { basename, join } from 'node:path';
 import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
 import { CertSettingsService } from './cert-settings.service';
+
+// Mở lại bằng zipfile của Python để chắc chắn đọc được central directory, không chỉ 4 byte "PK" đầu.
+// Phát hiện đúng kiểu lỗi "upload bị cắt ngắn giữa chừng" mà việc chỉ kiểm magic byte bỏ lọt.
+const PY_ZIP_CHECK = `
+import sys, zipfile
+try:
+    zipfile.ZipFile(sys.argv[1])
+except Exception as e:
+    print(str(e))
+    sys.exit(1)
+`;
 
 export interface CertAppInfo {
   path: string;
@@ -55,6 +67,19 @@ export class CertAppService {
   get maxBytes() {
     return Number(this.config.get('CERT_APP_MAX_MB', 100)) * 1024 * 1024;
   }
+  private get python() {
+    return this.config.get<string>('CERT_PYTHON') || 'python3';
+  }
+
+  /** Mở thật sự bằng zipfile của Python: bắt được file bị cắt ngắn giữa chừng khi tải lên, điều mà kiểm 4 byte "PK" bỏ lọt. */
+  private async checkZipIntegrity(path: string) {
+    const err = await new Promise<string>((resolve) =>
+      execFile(this.python, ['-I', '-c', PY_ZIP_CHECK, path], { timeout: 30_000 }, (error, stdout) =>
+        resolve(error ? stdout.trim() || error.message : ''),
+      ),
+    );
+    if (err) throw new BadRequestException('File IPA bị hỏng hoặc tải lên không trọn vẹn, vui lòng thử tải lại từ đầu');
+  }
 
   /**
    * Nhận IPA từ luồng dữ liệu thô, ghi ra file tạm, kiểm tra rồi đổi tên nguyên tử.
@@ -101,6 +126,8 @@ export class CertAppService {
       if (head.toString('latin1') !== 'PK') {
         throw new BadRequestException('Không phải file IPA (zip) hợp lệ');
       }
+
+      await this.checkZipIntegrity(tmp);
 
       const before = (await this.settings.get()).appFile;
       await rename(tmp, join(dir, finalName));

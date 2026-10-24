@@ -442,11 +442,14 @@ export class CertSignService implements OnModuleInit, OnModuleDestroy {
 
   /** Rút gọn lỗi của công cụ ký thành thông báo dễ hiểu, và không để lộ mật khẩu trong thông báo. */
   private friendly(output: string, password: string, code: number | null) {
-    const clean = (password ? output.split(password).join('***') : output).trim();
+    // zsign tô màu output bằng mã ANSI (ESC[...m); bỏ đi để không hiện ký tự rác trên giao diện.
+    const noAnsi = output.replace(/\x1b\[[0-9;]*m/g, '');
+    const clean = (password ? noAnsi.split(password).join('***') : noAnsi).trim();
     if (/mac verify|password|pkcs12|bad decrypt|invalid.*p12/i.test(clean)) {
       return 'Mật khẩu chứng chỉ sai hoặc file .p12 không hợp lệ';
     }
     if (/provision|profile/i.test(clean)) return 'File .mobileprovision không hợp lệ hoặc không khớp với chứng chỉ';
+    if (/unzip failed/i.test(clean)) return 'File IPA không mở được, có thể đã bị hỏng khi tải lên. Vui lòng thử tải lại file gốc rồi chọn lại.';
     if (code === 124 || code === 137) return 'Ký quá thời gian cho phép, hãy thử lại với file nhỏ hơn';
     return `Ký thất bại${clean ? `: ${clean.split('\n').slice(-2).join(' ').slice(0, 200)}` : ''}`;
   }
