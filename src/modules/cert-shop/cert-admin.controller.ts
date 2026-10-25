@@ -26,7 +26,7 @@ import { CertOrdersService } from './cert-orders.service';
 import { CertSettingsService } from './cert-settings.service';
 import { CertAdmin, CertShopGuard } from './cert-shop.guard';
 import { ChungchiClient } from './chungchi.client';
-import { AdminOrdersQuery, UpdateCertSettingsDto } from './dto/cert-shop.dto';
+import { AdminOrdersQuery, ImportQuickAppDto, UpdateCertSettingsDto } from './dto/cert-shop.dto';
 import {
   CertOrder,
   CertOrderDocument,
@@ -176,6 +176,23 @@ export class CertAdminController {
   async removeQuickApp(@Param('slug') slug: string) {
     await this.quickApps.remove(slug);
     return { ok: true };
+  }
+
+  /** Admin dán URL một repo.json (định dạng AltStore/SideStore) để xem danh sách app trước khi chọn thêm. */
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Get('quick-apps/preview')
+  previewRepo(@Query('url') url: string) {
+    if (!url) throw new BadRequestException('Thiếu url');
+    return this.quickApps.previewRepo(url);
+  }
+
+  /** Thêm một app từ repo.json đã xem trước: BE tự tải file ở downloadURL, không qua trình duyệt admin. */
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('quick-apps/:slug/import')
+  async importQuickApp(@Param('slug') slug: string, @Body() dto: ImportQuickAppDto) {
+    const r = await this.quickApps.importFromUrl(slug, dto.name ?? slug, dto.downloadURL);
+    return { ok: true, ...r };
   }
 
   @Get('stats')

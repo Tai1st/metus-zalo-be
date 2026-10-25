@@ -7,9 +7,18 @@ import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { open, rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import { Model } from 'mongoose';
 import { CertQuickApp, CertQuickAppDocument } from './schemas/cert-quick-app.schema';
+
+export interface RepoAppEntry {
+  name: string;
+  bundleIdentifier: string;
+  version: string;
+  iconURL?: string;
+  downloadURL: string;
+  size?: number | string;
+}
 
 // Giống PY_INSPECT trong cert-sign.service.ts: đọc Info.plist trong Payload/*.app bằng Python chuẩn có sẵn trên server.
 const PY_INSPECT = `
@@ -81,7 +90,61 @@ export class CertQuickAppService {
     return { path, info: { slug: row.slug, name: row.name, version: row.version, bundleId: row.bundleId, minOs: row.minOs, size: row.size } };
   }
 
+  /** Đọc mảng "apps" của một repo.json (định dạng AltStore/SideStore chuẩn) để admin xem và chọn, chưa tải gì cả. */
+  async previewRepo(url: string): Promise<{ name: string; apps: RepoAppEntry[] }> {
+    const u = this.parseHttpUrl(url, 'URL repo không hợp lệ');
+    let res: Response;
+    try {
+      res = await fetch(u, { signal: AbortSignal.timeout(15_000) });
+    } catch {
+      throw new BadRequestException('Không kết nối được tới repo');
+    }
+    if (!res.ok) throw new BadRequestException(`Không tải được repo (HTTP ${res.status})`);
+    const json = await res.json().catch(() => null);
+    if (!json || !Array.isArray(json.apps)) throw new BadRequestException('Không đúng định dạng repo.json (thiếu mảng "apps")');
+    const apps: RepoAppEntry[] = json.apps
+      .slice(0, 300)
+      .map((a: Record<string, unknown>) => ({
+        name: String(a?.name ?? '').slice(0, 120),
+        bundleIdentifier: String(a?.bundleIdentifier ?? '').slice(0, 120),
+        version: String(a?.version ?? '').slice(0, 40),
+        iconURL: typeof a?.iconURL === 'string' ? a.iconURL : undefined,
+        downloadURL: typeof a?.downloadURL === 'string' ? a.downloadURL : '',
+        size: typeof a?.size === 'number' || typeof a?.size === 'string' ? a.size : undefined,
+      }))
+      .filter((a: RepoAppEntry) => a.downloadURL);
+    return { name: String(json.name ?? ''), apps };
+  }
+
+  /** Admin chọn một app trong repo.json để thêm: BE tự tải IPA từ downloadURL và lưu, không qua trình duyệt của admin. */
+  async importFromUrl(slug: string, name: string, downloadURL: string) {
+    const u = this.parseHttpUrl(downloadURL, 'Link tải file không hợp lệ');
+    let res: Response;
+    try {
+      res = await fetch(u, { signal: AbortSignal.timeout(120_000) });
+    } catch {
+      throw new BadRequestException('Không tải được file từ link đã chọn');
+    }
+    if (!res.ok || !res.body) throw new BadRequestException(`Không tải được file (HTTP ${res.status})`);
+    return this.ingest(slug, name, Readable.fromWeb(res.body as never));
+  }
+
+  private parseHttpUrl(raw: string, errMsg: string): URL {
+    let u: URL;
+    try {
+      u = new URL(raw);
+    } catch {
+      throw new BadRequestException(errMsg);
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new BadRequestException(errMsg);
+    return u;
+  }
+
   async upload(slug: string, name: string, stream: Readable) {
+    return this.ingest(slug, name, stream);
+  }
+
+  private async ingest(slug: string, name: string, stream: Readable) {
     const clean = slug.toLowerCase().trim();
     if (!/^[a-z0-9-]{1,32}$/.test(clean)) throw new BadRequestException('Slug chỉ gồm chữ thường, số và gạch ngang');
     const file = `quick-${clean}.ipa`;

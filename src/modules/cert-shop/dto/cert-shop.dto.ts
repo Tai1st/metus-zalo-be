@@ -115,3 +115,8 @@ export class AdminOrdersQuery {
   @Max(100)
   pageSize?: number;
 }
+
+export class ImportQuickAppDto {
+  @IsOptional() @IsString() @MaxLength(60) name?: string;
+  @IsUrl({ require_tld: false }) @MaxLength(2000) downloadURL: string;
+}
