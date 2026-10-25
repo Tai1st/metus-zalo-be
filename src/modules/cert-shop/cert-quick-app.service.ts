@@ -58,6 +58,7 @@ export interface QuickAppInfo {
   size?: number;
   /** true nếu app này nhập từ repo.json, chưa tải sẵn trên server — chỉ tải khi thực sự được chọn để ký. */
   remote?: boolean;
+  iconURL?: string;
 }
 
 /**
@@ -94,6 +95,7 @@ export class CertQuickAppService {
       minOs: r.minOs,
       size: r.size,
       remote: Boolean(r.downloadURL && !r.file),
+      iconURL: r.iconURL,
     }));
   }
 
@@ -112,6 +114,7 @@ export class CertQuickAppService {
       minOs: row.minOs,
       size: row.size,
       remote: Boolean(row.downloadURL && !row.file),
+      iconURL: row.iconURL,
     };
     if (row.file) {
       const path = join(this.dir, basename(row.file));
@@ -142,6 +145,7 @@ export class CertQuickAppService {
             version: a.version || undefined,
             bundleId: a.bundleIdentifier || undefined,
             size: typeof a.size === 'number' ? a.size : undefined,
+            iconURL: a.iconURL && /^https?:\/\//.test(a.iconURL) ? a.iconURL : undefined,
           },
           $unset: { file: '' },
           $setOnInsert: { slug: clean },

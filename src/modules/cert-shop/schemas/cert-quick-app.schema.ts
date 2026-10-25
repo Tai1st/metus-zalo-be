@@ -17,6 +17,8 @@ export class CertQuickApp {
   @Prop() bundleId?: string;
   @Prop() minOs?: string;
   @Prop() size?: number;
+  /** Icon khai báo trong repo.json (app nhập hàng loạt) — chỉ là link ảnh, không tải/lưu về server. */
+  @Prop() iconURL?: string;
 }
 
 export type CertQuickAppDocument = HydratedDocument<CertQuickApp>;
