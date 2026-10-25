@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import { CertSettingsService, ShopSettings } from './cert-settings.service';
 import { ChungchiClient, ProviderError, ProviderOrder } from './chungchi.client';
 import {
@@ -31,8 +31,9 @@ export class CertOrdersService {
     return s;
   }
 
+  /** Khách để trống lúc đặt mua thì dùng mật khẩu mặc định này cho dễ nhớ. */
   newP12Password(): string {
-    return randomBytes(4).toString('hex');
+    return '1';
   }
 
   /** Thông tin thanh toán chuyển khoản (VietQR) cho một đơn. */
