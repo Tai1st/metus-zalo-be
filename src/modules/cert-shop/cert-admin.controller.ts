@@ -163,6 +163,29 @@ export class CertAdminController {
     return this.quickApps.list();
   }
 
+  /** Admin dán URL một repo.json (định dạng AltStore/SideStore) để xem danh sách app trước khi chọn thêm. */
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Get('quick-apps/preview')
+  previewRepo(@Query('url') url: string) {
+    if (!url) throw new BadRequestException('Thiếu url');
+    return this.quickApps.previewRepo(url);
+  }
+
+  /**
+   * Nhập toàn bộ app hợp lệ trong repo.json vào Kho ứng dụng cùng lúc — chỉ lưu tên/bundleId/link
+   * tải, KHÔNG tải file IPA nào về server lúc này. App loại này chỉ dùng để khách tải IPA về máy,
+   * không dùng để ký (chỉ app upload tay ở dưới mới ký được).
+   * Đặt TRƯỚC @Post('quick-apps/:slug'): NestJS khớp route theo thứ tự khai báo, nếu đặt sau thì
+   * ':slug' sẽ nuốt luôn "import-repo" làm tên slug, gọi nhầm sang uploadQuickApp.
+   */
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('quick-apps/import-repo')
+  async importRepo(@Body() dto: ImportRepoDto) {
+    const r = await this.quickApps.importRepoAll(dto.url);
+    return { ok: true, ...r };
+  }
+
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
   @HttpCode(200)
   @Post('quick-apps/:slug')
@@ -176,27 +199,6 @@ export class CertAdminController {
   async removeQuickApp(@Param('slug') slug: string) {
     await this.quickApps.remove(slug);
     return { ok: true };
-  }
-
-  /** Admin dán URL một repo.json (định dạng AltStore/SideStore) để xem danh sách app trước khi chọn thêm. */
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @Get('quick-apps/preview')
-  previewRepo(@Query('url') url: string) {
-    if (!url) throw new BadRequestException('Thiếu url');
-    return this.quickApps.previewRepo(url);
-  }
-
-  /**
-   * Nhập toàn bộ app hợp lệ trong repo.json vào Kho ứng dụng cùng lúc — chỉ lưu tên/bundleId/link
-   * tải, KHÔNG tải file IPA nào về server lúc này. File thật chỉ được BE tải khi có người thực sự
-   * chọn app đó để ký (xem CertSignService.useRemoteFile).
-   */
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @HttpCode(200)
-  @Post('quick-apps/import-repo')
-  async importRepo(@Body() dto: ImportRepoDto) {
-    const r = await this.quickApps.importRepoAll(dto.url);
-    return { ok: true, ...r };
   }
 
   @Get('stats')
