@@ -316,9 +316,13 @@ export class CertShopController {
   @UseGuards(CertShopGuard)
   @Get('quick-apps/:slug/download')
   async downloadQuickApp(@Req() req: Authed, @Param('slug') slug: string, @Res() res: Response) {
-    const found = await this.quickApps.path(slug);
+    const found = await this.quickApps.resolve(slug);
     if (!found) throw new NotFoundException('Không tìm thấy app này');
     if (!(await this.canDownloadApp(req.user))) throw new ForbiddenException('Cần mua chứng chỉ để tải ứng dụng');
+    if (!found.path) {
+      // App nhập từ repo.json, không lưu trên server: chuyển thẳng khách sang nguồn gốc.
+      return res.redirect(302, found.downloadURL!);
+    }
     const safe = `${found.info.name}-${found.info.version ?? ''}`.replace(/[^A-Za-z0-9._-]+/g, '-');
     res.set({
       'Content-Type': 'application/octet-stream',
@@ -340,7 +344,7 @@ export class CertShopController {
   async installApp(@Req() req: Authed) {
     const appInfo = await this.apps.info();
     if (!appInfo) throw new NotFoundException('Chưa có ứng dụng để cài');
-    return this.installFromServer(req.user, appInfo.path, {
+    return this.installFromServer(req.user, { path: appInfo.path }, {
       bundleId: appInfo.bundleId,
       name: appInfo.name,
       version: appInfo.version,
@@ -352,16 +356,20 @@ export class CertShopController {
   @HttpCode(200)
   @Post('quick-apps/:slug/install')
   async installQuickApp(@Req() req: Authed, @Param('slug') slug: string) {
-    const found = await this.quickApps.path(slug);
+    const found = await this.quickApps.resolve(slug);
     if (!found) throw new NotFoundException('Không tìm thấy app này');
-    return this.installFromServer(req.user, found.path, {
+    return this.installFromServer(req.user, found.path ? { path: found.path } : { url: found.downloadURL! }, {
       bundleId: found.info.bundleId ?? '',
       name: found.info.name,
       version: found.info.version ?? '',
     });
   }
 
-  private async installFromServer(user: ShopUser, filePath: string, meta: { bundleId: string; name: string; version: string }) {
+  private async installFromServer(
+    user: ShopUser,
+    source: { path: string } | { url: string },
+    meta: { bundleId: string; name: string; version: string },
+  ) {
     if (!(await this.signer.ready())) {
       throw new ServiceUnavailableException('Công cụ ký chưa sẵn sàng, vui lòng quay lại sau');
     }
@@ -375,7 +383,8 @@ export class CertShopController {
 
     // Nếu nạp IPA hoặc chứng chỉ lỗi giữa chừng, lỗi lan thẳng ra ngoài; job dở dang tự hết hạn theo TTL như các lượt ký thủ công khác.
     const job = await this.signer.create(user.id);
-    await this.signer.useAppFile(job, filePath, meta);
+    if ('path' in source) await this.signer.useAppFile(job, source.path, meta);
+    else await this.signer.useRemoteFile(job, source.url);
     await this.signer.useCertZipBuffer(job, certZip);
     this.signer.start(job, { password: order.p12Password }, user.role === Role.Admin);
     return { jobId: job.id };

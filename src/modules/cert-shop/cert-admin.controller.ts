@@ -26,7 +26,7 @@ import { CertOrdersService } from './cert-orders.service';
 import { CertSettingsService } from './cert-settings.service';
 import { CertAdmin, CertShopGuard } from './cert-shop.guard';
 import { ChungchiClient } from './chungchi.client';
-import { AdminOrdersQuery, ImportQuickAppDto, UpdateCertSettingsDto } from './dto/cert-shop.dto';
+import { AdminOrdersQuery, ImportRepoDto, UpdateCertSettingsDto } from './dto/cert-shop.dto';
 import {
   CertOrder,
   CertOrderDocument,
@@ -186,12 +186,16 @@ export class CertAdminController {
     return this.quickApps.previewRepo(url);
   }
 
-  /** Thêm một app từ repo.json đã xem trước: BE tự tải file ở downloadURL, không qua trình duyệt admin. */
-  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  /**
+   * Nhập toàn bộ app hợp lệ trong repo.json vào Kho ứng dụng cùng lúc — chỉ lưu tên/bundleId/link
+   * tải, KHÔNG tải file IPA nào về server lúc này. File thật chỉ được BE tải khi có người thực sự
+   * chọn app đó để ký (xem CertSignService.useRemoteFile).
+   */
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(200)
-  @Post('quick-apps/:slug/import')
-  async importQuickApp(@Param('slug') slug: string, @Body() dto: ImportQuickAppDto) {
-    const r = await this.quickApps.importFromUrl(slug, dto.name ?? slug, dto.downloadURL);
+  @Post('quick-apps/import-repo')
+  async importRepo(@Body() dto: ImportRepoDto) {
+    const r = await this.quickApps.importRepoAll(dto.url);
     return { ok: true, ...r };
   }
 

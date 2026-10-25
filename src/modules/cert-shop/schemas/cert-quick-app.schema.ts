@@ -9,7 +9,10 @@ import { HydratedDocument } from 'mongoose';
 export class CertQuickApp {
   @Prop({ required: true, unique: true, lowercase: true, trim: true }) slug: string;
   @Prop({ required: true }) name: string;
-  @Prop({ required: true }) file: string;
+  /** Có khi app được tải lên/nhập tay (file nằm trên đĩa server). */
+  @Prop() file?: string;
+  /** Có khi app nhập hàng loạt từ repo.json: không tải sẵn, BE chỉ tải khi có người thực sự ký app này. */
+  @Prop() downloadURL?: string;
   @Prop() version?: string;
   @Prop() bundleId?: string;
   @Prop() minOs?: string;

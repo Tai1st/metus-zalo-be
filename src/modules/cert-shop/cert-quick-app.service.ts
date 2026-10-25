@@ -46,6 +46,8 @@ export interface QuickAppInfo {
   bundleId?: string;
   minOs?: string;
   size?: number;
+  /** true nếu app này nhập từ repo.json, chưa tải sẵn trên server — chỉ tải khi thực sự được chọn để ký. */
+  remote?: boolean;
 }
 
 /**
@@ -74,20 +76,79 @@ export class CertQuickAppService {
 
   async list(): Promise<QuickAppInfo[]> {
     const rows = await this.model.find().sort({ name: 1 });
-    return rows.map((r) => ({ slug: r.slug, name: r.name, version: r.version, bundleId: r.bundleId, minOs: r.minOs, size: r.size }));
+    return rows.map((r) => ({
+      slug: r.slug,
+      name: r.name,
+      version: r.version,
+      bundleId: r.bundleId,
+      minOs: r.minOs,
+      size: r.size,
+      remote: Boolean(r.downloadURL && !r.file),
+    }));
   }
 
-  /** Đường dẫn file thật trên đĩa cho một slug, hoặc null nếu chưa có / file đã mất. */
-  async path(slug: string): Promise<{ path: string; info: QuickAppInfo } | null> {
+  /**
+   * Nguồn IPA cho một slug: file cục bộ (đã upload) hoặc URL remote (nhập từ repo.json, chưa tải).
+   * `path` null khi app là remote — nơi gọi tự quyết định tải thẳng từ `downloadURL` lúc cần.
+   */
+  async resolve(slug: string): Promise<{ path: string | null; downloadURL: string | null; info: QuickAppInfo } | null> {
     const row = await this.model.findOne({ slug: slug.toLowerCase() });
     if (!row) return null;
-    const path = join(this.dir, basename(row.file));
-    try {
-      await stat(path);
-    } catch {
-      return null;
+    const info: QuickAppInfo = {
+      slug: row.slug,
+      name: row.name,
+      version: row.version,
+      bundleId: row.bundleId,
+      minOs: row.minOs,
+      size: row.size,
+      remote: Boolean(row.downloadURL && !row.file),
+    };
+    if (row.file) {
+      const path = join(this.dir, basename(row.file));
+      try {
+        await stat(path);
+      } catch {
+        return null;
+      }
+      return { path, downloadURL: null, info };
     }
-    return { path, info: { slug: row.slug, name: row.name, version: row.version, bundleId: row.bundleId, minOs: row.minOs, size: row.size } };
+    if (row.downloadURL) return { path: null, downloadURL: row.downloadURL, info };
+    return null;
+  }
+
+  /** Nhập toàn bộ app hợp lệ trong repo.json vào DB, không tải file IPA nào cả — chỉ tải khi thực sự được chọn để ký. */
+  async importRepoAll(url: string): Promise<{ added: number; total: number }> {
+    const { apps } = await this.previewRepo(url);
+    let added = 0;
+    for (const a of apps) {
+      const clean = this.slugFor(a.bundleIdentifier || a.name);
+      if (!clean) continue;
+      await this.model.updateOne(
+        { slug: clean },
+        {
+          $set: {
+            name: a.name || clean,
+            downloadURL: a.downloadURL,
+            version: a.version || undefined,
+            bundleId: a.bundleIdentifier || undefined,
+            size: typeof a.size === 'number' ? a.size : undefined,
+          },
+          $unset: { file: '' },
+          $setOnInsert: { slug: clean },
+        },
+        { upsert: true },
+      );
+      added++;
+    }
+    return { added, total: apps.length };
+  }
+
+  private slugFor(s: string) {
+    return s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 32);
   }
 
   /** Đọc mảng "apps" của một repo.json (định dạng AltStore/SideStore chuẩn) để admin xem và chọn, chưa tải gì cả. */
@@ -114,19 +175,6 @@ export class CertQuickAppService {
       }))
       .filter((a: RepoAppEntry) => a.downloadURL);
     return { name: String(json.name ?? ''), apps };
-  }
-
-  /** Admin chọn một app trong repo.json để thêm: BE tự tải IPA từ downloadURL và lưu, không qua trình duyệt của admin. */
-  async importFromUrl(slug: string, name: string, downloadURL: string) {
-    const u = this.parseHttpUrl(downloadURL, 'Link tải file không hợp lệ');
-    let res: Response;
-    try {
-      res = await fetch(u, { signal: AbortSignal.timeout(120_000) });
-    } catch {
-      throw new BadRequestException('Không tải được file từ link đã chọn');
-    }
-    if (!res.ok || !res.body) throw new BadRequestException(`Không tải được file (HTTP ${res.status})`);
-    return this.ingest(slug, name, Readable.fromWeb(res.body as never));
   }
 
   private parseHttpUrl(raw: string, errMsg: string): URL {
@@ -194,6 +242,7 @@ export class CertQuickAppService {
             bundleId: meta.bundleId || undefined,
             minOs: meta.minOs || undefined,
           },
+          $unset: { downloadURL: '' },
           $setOnInsert: { slug: clean },
         },
         { upsert: true },
@@ -208,7 +257,7 @@ export class CertQuickAppService {
   async remove(slug: string) {
     const clean = slug.toLowerCase();
     const row = await this.model.findOne({ slug: clean });
-    if (row) await rm(join(this.dir, basename(row.file)), { force: true });
+    if (row?.file) await rm(join(this.dir, basename(row.file)), { force: true });
     await this.model.deleteOne({ slug: clean });
   }
 }

@@ -15,7 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { access, chown, copyFile, mkdir, open, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import { CertSettingsService } from './cert-settings.service';
 import { streamToFile } from './upload.util';
 
@@ -284,6 +284,23 @@ export class CertSignService implements OnModuleInit, OnModuleDestroy {
     await this.give(dest);
     job.source = meta;
     job.hasIpa = true;
+  }
+
+  /**
+   * Nạp IPA từ một URL bên ngoài (app ký nhanh nhập hàng loạt từ repo.json, không lưu sẵn trên server).
+   * Tải thẳng vào thư mục lượt ký rồi validate/đọc metadata thật y hệt saveIpa — không tin dữ liệu
+   * khai báo trong repo.json, vì vậy tên/bundleId/version trả về luôn khớp đúng file thật đã ký.
+   */
+  async useRemoteFile(job: Job, url: string): Promise<AppMeta> {
+    this.mustBe(job, 'created');
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+    } catch {
+      throw new BadRequestException('Không tải được app từ nguồn, vui lòng thử lại sau');
+    }
+    if (!res.ok || !res.body) throw new BadRequestException('Không tải được app từ nguồn, vui lòng thử lại sau');
+    return this.saveIpa(job, Readable.fromWeb(res.body as never));
   }
 
   /** Nạp gói chứng chỉ (.zip) đã có sẵn trong bộ nhớ (vd tải về từ nhà cung cấp), không qua upload của khách. */

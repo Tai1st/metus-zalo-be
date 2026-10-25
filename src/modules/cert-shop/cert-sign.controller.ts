@@ -57,16 +57,25 @@ export class CertSignController {
   @HttpCode(200)
   @Put('jobs/:id/quick-app/:slug')
   async putQuickApp(@Req() req: Authed, @Param('id') id: string, @Param('slug') slug: string) {
-    const found =
-      slug === MAIN_SLUG
-        ? await this.apps.info().then((a) => (a ? { path: a.path, info: a } : null))
-        : await this.quickApps.path(slug);
+    const job = this.sign.get(id, req.user.id);
+    if (slug === MAIN_SLUG) {
+      const a = await this.apps.info();
+      if (!a) throw new NotFoundException('Không tìm thấy app này');
+      await this.sign.useAppFile(job, a.path, { bundleId: a.bundleId, name: a.name, version: a.version });
+      return { ok: true, app: a };
+    }
+    const found = await this.quickApps.resolve(slug);
     if (!found) throw new NotFoundException('Không tìm thấy app này');
-    await this.sign.useAppFile(this.sign.get(id, req.user.id), found.path, {
-      bundleId: found.info.bundleId ?? '',
-      name: found.info.name,
-      version: found.info.version ?? '',
-    });
+    if (found.path) {
+      await this.sign.useAppFile(job, found.path, {
+        bundleId: found.info.bundleId ?? '',
+        name: found.info.name,
+        version: found.info.version ?? '',
+      });
+    } else {
+      // App nhập từ repo.json, chưa tải sẵn: BE tải thẳng từ downloadURL vào lượt ký lúc này.
+      await this.sign.useRemoteFile(job, found.downloadURL!);
+    }
     return { ok: true, app: found.info };
   }
 
