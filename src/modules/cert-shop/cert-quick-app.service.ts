@@ -20,6 +20,16 @@ export interface RepoAppEntry {
   size?: number | string;
 }
 
+/**
+ * Nhiều host lưu repo.json/IPA chặn request không có User-Agent (coi là bot), trả về trang lỗi
+ * nhỏ vài trăm byte thay vì nội dung thật — gửi UA như trình duyệt thật để lấy đúng file.
+ */
+export const REPO_FETCH_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  Accept: '*/*',
+};
+
 // Giống PY_INSPECT trong cert-sign.service.ts: đọc Info.plist trong Payload/*.app bằng Python chuẩn có sẵn trên server.
 const PY_INSPECT = `
 import sys, json, zipfile, plistlib
@@ -156,7 +166,7 @@ export class CertQuickAppService {
     const u = this.parseHttpUrl(url, 'URL repo không hợp lệ');
     let res: Response;
     try {
-      res = await fetch(u, { signal: AbortSignal.timeout(15_000) });
+      res = await fetch(u, { headers: REPO_FETCH_HEADERS, signal: AbortSignal.timeout(15_000) });
     } catch {
       throw new BadRequestException('Không kết nối được tới repo');
     }
@@ -165,14 +175,18 @@ export class CertQuickAppService {
     if (!json || !Array.isArray(json.apps)) throw new BadRequestException('Không đúng định dạng repo.json (thiếu mảng "apps")');
     const apps: RepoAppEntry[] = json.apps
       .slice(0, 300)
-      .map((a: Record<string, unknown>) => ({
-        name: String(a?.name ?? '').slice(0, 120),
-        bundleIdentifier: String(a?.bundleIdentifier ?? '').slice(0, 120),
-        version: String(a?.version ?? '').slice(0, 40),
-        iconURL: typeof a?.iconURL === 'string' ? a.iconURL : undefined,
-        downloadURL: typeof a?.downloadURL === 'string' ? a.downloadURL : '',
-        size: typeof a?.size === 'number' || typeof a?.size === 'string' ? a.size : undefined,
-      }))
+      .map((a: Record<string, unknown>) => {
+        // AltStore Classic: field phẳng ngay trên app. AltStore PAL: nằm trong versions[0].
+        const latest = (Array.isArray(a?.versions) ? a.versions[0] : undefined) as Record<string, unknown> | undefined;
+        return {
+          name: String(a?.name ?? '').slice(0, 120),
+          bundleIdentifier: String(a?.bundleIdentifier ?? '').slice(0, 120),
+          version: String(a?.version ?? latest?.version ?? '').slice(0, 40),
+          iconURL: typeof a?.iconURL === 'string' ? a.iconURL : undefined,
+          downloadURL: typeof a?.downloadURL === 'string' ? a.downloadURL : typeof latest?.downloadURL === 'string' ? latest.downloadURL : '',
+          size: (typeof a?.size === 'number' || typeof a?.size === 'string' ? a.size : undefined) ?? (typeof latest?.size === 'number' ? latest.size : undefined),
+        };
+      })
       .filter((a: RepoAppEntry) => a.downloadURL);
     return { name: String(json.name ?? ''), apps };
   }

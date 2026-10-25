@@ -17,6 +17,7 @@ import { constants } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { CertSettingsService } from './cert-settings.service';
+import { REPO_FETCH_HEADERS } from './cert-quick-app.service';
 import { streamToFile } from './upload.util';
 
 export type SignState = 'created' | 'waiting' | 'running' | 'done' | 'failed';
@@ -295,7 +296,7 @@ export class CertSignService implements OnModuleInit, OnModuleDestroy {
     this.mustBe(job, 'created');
     let res: Response;
     try {
-      res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+      res = await fetch(url, { headers: REPO_FETCH_HEADERS, signal: AbortSignal.timeout(60_000) });
     } catch {
       throw new BadRequestException('Không tải được app từ nguồn, vui lòng thử lại sau');
     }
