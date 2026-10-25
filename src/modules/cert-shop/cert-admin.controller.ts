@@ -242,4 +242,16 @@ export class CertAdminController {
     const r = await this.orders.syncFromProvider(order.providerOrderCode);
     return { status: r?.status, error: r?.error };
   }
+
+  /** Chỉ xóa được đơn chưa từng động tới nhà cung cấp (chờ thanh toán/đã hủy/thất bại), tránh mất dấu vết đơn thật. */
+  @HttpCode(200)
+  @Delete('orders/:code')
+  async removeOrder(@Param('code') code: string) {
+    const r = await this.orderModel.deleteOne({
+      code,
+      status: { $in: [CertOrderStatus.AwaitingPayment, CertOrderStatus.Cancelled, CertOrderStatus.Failed] },
+    });
+    if (!r.deletedCount) throw new ConflictException('Chỉ xóa được đơn chờ thanh toán, đã hủy hoặc thất bại');
+    return { ok: true };
+  }
 }
