@@ -22,6 +22,7 @@ export interface ShopSettings {
   chungchiBaseUrl: string;
   chungchiApiKey: string;
   webhookSecret: string;
+  web2mToken: string;
 }
 
 const CACHE_MS = 15_000;
@@ -77,6 +78,7 @@ export class CertSettingsService {
       chungchiBaseUrl: (d?.chungchiBaseUrl || env('CHUNGCHI_BASE_URL', 'https://chungchi.store')).replace(/\/$/, ''),
       chungchiApiKey: dec(d?.chungchiApiKeyEnc) || env('CHUNGCHI_API_KEY', ''),
       webhookSecret: dec(d?.webhookSecretEnc) || env('CHUNGCHI_WEBHOOK_SECRET', ''),
+      web2mToken: dec(d?.web2mTokenEnc) || env('WEB2M_TOKEN', ''),
     };
     this.cache = { at: Date.now(), value };
     return value;
@@ -97,6 +99,7 @@ export class CertSettingsService {
       hasApiKey: Boolean(s.chungchiApiKey),
       apiKeyHint: s.chungchiApiKey ? `…${s.chungchiApiKey.slice(-4)}` : '',
       hasWebhookSecret: Boolean(s.webhookSecret),
+      hasWeb2mToken: Boolean(s.web2mToken),
     };
   }
 
@@ -149,6 +152,7 @@ export class CertSettingsService {
     // Khóa bí mật: chuỗi rỗng = giữ nguyên; chỉ ghi khi admin nhập giá trị mới.
     if (dto.chungchiApiKey) set.chungchiApiKeyEnc = encryptSecret(dto.chungchiApiKey, this.secret);
     if (dto.webhookSecret) set.webhookSecretEnc = encryptSecret(dto.webhookSecret, this.secret);
+    if (dto.web2mToken) set.web2mTokenEnc = encryptSecret(dto.web2mToken, this.secret);
 
     await this.model.updateOne(
       { key: 'main' },

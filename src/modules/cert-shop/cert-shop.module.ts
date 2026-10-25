@@ -8,6 +8,7 @@ import { CertAuthController } from './cert-auth.controller';
 import { CertAppService } from './cert-app.service';
 import { CertCheckService } from './cert-check.service';
 import { CertOrdersService } from './cert-orders.service';
+import { CertPaymentWatcherService } from './cert-payment-watcher.service';
 import { CertSettingsService } from './cert-settings.service';
 import { CertShopController } from './cert-shop.controller';
 import { CertSignController } from './cert-sign.controller';
@@ -48,6 +49,7 @@ import { CertQuickAppService } from './cert-quick-app.service';
     CertCheckService,
     CertSignService,
     CertOrdersService,
+    CertPaymentWatcherService,
     CertSettingsService,
     CertShopGuard,
   ],

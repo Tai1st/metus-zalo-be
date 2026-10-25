@@ -74,6 +74,7 @@ export class UpdateCertSettingsDto {
   /** Rỗng/không gửi = giữ khóa hiện tại. */
   @IsOptional() @IsString() @MaxLength(300) chungchiApiKey?: string;
   @IsOptional() @IsString() @MaxLength(300) webhookSecret?: string;
+  @IsOptional() @IsString() @MaxLength(300) web2mToken?: string;
 }
 
 export class CheckCertDto {

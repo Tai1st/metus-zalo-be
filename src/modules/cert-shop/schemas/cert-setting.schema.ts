@@ -31,6 +31,9 @@ export class CertSetting {
   /** Mã hóa AES-256-GCM bằng COOKIE_SECRET, không bao giờ trả ra ngoài. */
   @Prop() chungchiApiKeyEnc?: string;
   @Prop() webhookSecretEnc?: string;
+
+  /** Token API web2m.com (lịch sử giao dịch ACB) dùng để tự động xác nhận thanh toán. */
+  @Prop() web2mTokenEnc?: string;
 }
 
 export type CertSettingDocument = HydratedDocument<CertSetting>;
