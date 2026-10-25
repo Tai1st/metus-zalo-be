@@ -12,7 +12,7 @@ interface Web2mTransaction {
   type: 'IN' | 'OUT';
 }
 
-const POLL_MS = 10_000;
+const POLL_MS = 30_000;
 
 /**
  * Tự động xác nhận đơn "chờ thanh toán" bằng lịch sử giao dịch ACB (qua web2m.com), thay vì
