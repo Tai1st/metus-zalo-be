@@ -231,4 +231,15 @@ export class CertAdminController {
     if (!r.modifiedCount) throw new ConflictException('Chỉ hủy được đơn đang chờ thanh toán');
     return { status: CertOrderStatus.Cancelled };
   }
+
+  /** Đồng bộ thủ công trạng thái từ nhà cung cấp — dùng khi webhook không tới và khách chưa mở lại trang đơn. */
+  @HttpCode(200)
+  @Post('orders/:code/sync')
+  async syncOne(@Param('code') code: string) {
+    const order = await this.orderModel.findOne({ code });
+    if (!order) throw new NotFoundException('Không tìm thấy đơn');
+    if (!order.providerOrderCode) throw new ConflictException('Đơn chưa được gửi sang nhà cung cấp');
+    const r = await this.orders.syncFromProvider(order.providerOrderCode);
+    return { status: r?.status, error: r?.error };
+  }
 }
