@@ -358,7 +358,9 @@ export class CertShopController {
   async installQuickApp(@Req() req: Authed, @Param('slug') slug: string) {
     const found = await this.quickApps.resolve(slug);
     if (!found) throw new NotFoundException('Không tìm thấy app này');
-    return this.installFromServer(req.user, found.path ? { path: found.path } : { url: found.downloadURL! }, {
+    // App nhập từ repo.json (remote) chỉ để tải IPA về máy, không dùng để cài/ký — chỉ app upload tay mới dùng được.
+    if (!found.path) throw new ConflictException('App này chỉ để tải về, không dùng để cài đặt được');
+    return this.installFromServer(req.user, { path: found.path }, {
       bundleId: found.info.bundleId ?? '',
       name: found.info.name,
       version: found.info.version ?? '',
@@ -367,7 +369,7 @@ export class CertShopController {
 
   private async installFromServer(
     user: ShopUser,
-    source: { path: string } | { url: string },
+    source: { path: string },
     meta: { bundleId: string; name: string; version: string },
   ) {
     if (!(await this.signer.ready())) {
@@ -383,8 +385,7 @@ export class CertShopController {
 
     // Nếu nạp IPA hoặc chứng chỉ lỗi giữa chừng, lỗi lan thẳng ra ngoài; job dở dang tự hết hạn theo TTL như các lượt ký thủ công khác.
     const job = await this.signer.create(user.id);
-    if ('path' in source) await this.signer.useAppFile(job, source.path, meta);
-    else await this.signer.useRemoteFile(job, source.url);
+    await this.signer.useAppFile(job, source.path, meta);
     await this.signer.useCertZipBuffer(job, certZip);
     this.signer.start(job, { password: order.p12Password }, user.role === Role.Admin);
     return { jobId: job.id };

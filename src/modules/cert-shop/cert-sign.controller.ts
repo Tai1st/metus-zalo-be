@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Get,
   HttpCode,
@@ -47,7 +48,8 @@ export class CertSignController {
       ...(main
         ? [{ slug: MAIN_SLUG, name: main.name, version: main.version, bundleId: main.bundleId, minOs: main.minOs, size: main.size }]
         : []),
-      ...quicks,
+      // App remote (nhập từ repo.json) chỉ để tải về, không ký được nên không đưa vào danh sách chọn ở đây.
+      ...quicks.filter((q) => !q.remote),
     ];
   }
 
@@ -66,16 +68,13 @@ export class CertSignController {
     }
     const found = await this.quickApps.resolve(slug);
     if (!found) throw new NotFoundException('Không tìm thấy app này');
-    if (found.path) {
-      await this.sign.useAppFile(job, found.path, {
-        bundleId: found.info.bundleId ?? '',
-        name: found.info.name,
-        version: found.info.version ?? '',
-      });
-    } else {
-      // App nhập từ repo.json, chưa tải sẵn: BE tải thẳng từ downloadURL vào lượt ký lúc này.
-      await this.sign.useRemoteFile(job, found.downloadURL!);
-    }
+    // App nhập từ repo.json (remote) chỉ để khách tải IPA về máy, không dùng để ký — chỉ app upload tay mới ký được.
+    if (!found.path) throw new ConflictException('App này chỉ để tải về, không dùng để ký được');
+    await this.sign.useAppFile(job, found.path, {
+      bundleId: found.info.bundleId ?? '',
+      name: found.info.name,
+      version: found.info.version ?? '',
+    });
     return { ok: true, app: found.info };
   }
 
