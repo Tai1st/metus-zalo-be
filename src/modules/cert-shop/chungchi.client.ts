@@ -114,6 +114,17 @@ export class ChungchiClient {
     });
   }
 
+  /**
+   * Đăng ký (hoặc thay) URL nhận webhook. Secret chỉ được nhà cung cấp trả về đúng một lần trong
+   * response này — không xem lại được qua dashboard, nên phải lưu ngay lập tức khi gọi xong.
+   */
+  registerWebhook(url: string) {
+    return this.call<{ url: string; secret: string }>('/api/v1/webhook', {
+      method: 'PUT',
+      body: JSON.stringify({ url }),
+    });
+  }
+
   /** Tải file zip; download_url có thể cần Bearer nên chỉ gắn khi cùng host. */
   async download(url: string): Promise<Response> {
     const { chungchiApiKey: key, chungchiBaseUrl: base } = await this.settings.get();

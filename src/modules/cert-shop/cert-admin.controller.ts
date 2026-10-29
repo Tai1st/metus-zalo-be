@@ -114,6 +114,21 @@ export class CertAdminController {
     return this.settings.update(dto);
   }
 
+  /**
+   * Đăng ký (hoặc thay) webhook với chungchi.store: gọi PUT /api/v1/webhook bằng URL webhook của
+   * chính site, rồi lưu luôn secret họ trả về — secret chỉ hiện đúng một lần ở response này, không
+   * xem lại được sau, nên không thể "nhập tay" mà phải để BE tự gọi và lưu ngay.
+   */
+  @HttpCode(200)
+  @Post('webhook/register')
+  async registerWebhook() {
+    const s = await this.settings.get();
+    const url = `${s.siteUrl}/api/cert-shop/webhooks/chungchi`;
+    const r = await this.provider.registerWebhook(url);
+    await this.settings.update({ webhookSecret: r.secret });
+    return { ok: true, url: r.url };
+  }
+
   // ---- ứng dụng (IPA) phát hành cho khách đã mua chứng chỉ ----
   @Get('app')
   async getApp() {
