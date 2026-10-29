@@ -16,6 +16,8 @@ export interface ProviderOrder {
   plan_id: number | string;
   status: string; // pending | completed (failed/cancelled chỉ qua webhook)
   download_url?: string;
+  udid?: string;
+  created_at?: string;
 }
 
 /**
@@ -97,6 +99,15 @@ export class ChungchiClient {
         `/api/v1/orders/${encodeURIComponent(code)}`,
       )
     ).order;
+  }
+
+  /** Đơn gần đây của một UDID bên nhà cung cấp — dùng để tránh tạo trùng khi gửi lại đơn sau lỗi mơ hồ (xem fulfill()). */
+  async ordersByUdid(udid: string, limit = 20): Promise<ProviderOrder[]> {
+    return (
+      await this.call<{ orders: ProviderOrder[] }>(
+        `/api/v1/devices/${encodeURIComponent(udid)}/orders?limit=${limit}`,
+      )
+    ).orders;
   }
 
   // Đường dẫn "chekcert" viết sai đúng như tài liệu nhà cung cấp.

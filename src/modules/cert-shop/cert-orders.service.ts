@@ -75,8 +75,24 @@ export class CertOrdersService {
     );
     if (!order) return this.model.findById(orderId);
 
-    order.providerAttempts += 1;
     try {
+      // Gửi lại sau lỗi mơ hồ (vd timeout) có thể thực ra đã tạo đơn bên nhà cung cấp lần trước —
+      // họ không hỗ trợ idempotency key nên không thể báo trước, chỉ có thể TỰ KIỂM lại bằng cách
+      // tra lịch sử đơn theo UDID trước khi gọi tạo đơn mới, tránh trừ ví/tạo đơn thật lần 2.
+      if (order.providerAttempts > 0) {
+        const createdAt = (order as unknown as { createdAt: Date }).createdAt;
+        const existing = (await this.provider.ordersByUdid(order.udid).catch(() => []))
+          .filter((o) => String(o.plan_id) === String(order.planId) && (!o.created_at || new Date(o.created_at) >= createdAt))
+          .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0];
+        if (existing) {
+          order.providerOrderCode = existing.order_code;
+          this.apply(order, existing);
+          await order.save();
+          return order;
+        }
+      }
+
+      order.providerAttempts += 1;
       const po = await this.provider.createOrder({
         plan_id: order.planId,
         udid: order.udid,
