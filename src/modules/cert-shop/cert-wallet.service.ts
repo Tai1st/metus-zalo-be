@@ -2,7 +2,8 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomInt } from 'node:crypto';
 import { Model } from 'mongoose';
-import { CertSettingsService } from './cert-settings.service';
+import { CertSettingsService, ShopSettings } from './cert-settings.service';
+import { CertOrdersService } from './cert-orders.service';
 import { CertDeposit, CertDepositDocument, CertDepositStatus } from './schemas/cert-deposit.schema';
 import { CertWallet, CertWalletDocument } from './schemas/cert-wallet.schema';
 import { CertWalletLedger, CertWalletLedgerDocument } from './schemas/cert-wallet-ledger.schema';
@@ -27,6 +28,7 @@ export class CertWalletService {
     @InjectModel(CertWallet.name) private readonly walletModel: Model<CertWalletDocument>,
     @InjectModel(CertWalletLedger.name) private readonly ledgerModel: Model<CertWalletLedgerDocument>,
     private readonly settings: CertSettingsService,
+    private readonly orders: CertOrdersService,
   ) {}
 
   async balanceVnd(userId: string): Promise<number> {
@@ -34,14 +36,23 @@ export class CertWalletService {
     return w?.balanceVnd ?? 0;
   }
 
+  /** Mạng phải đã bật, có địa chỉ và mã Binance thật đã xác minh — không cho dùng mạng chưa cấu hình xong. */
+  private resolveNetwork(s: ShopSettings, networkKey: string) {
+    const net = s.usdtNetworks.find((n) => n.key === networkKey);
+    if (!net || !net.enabled || !net.address || !net.binanceNetwork) {
+      throw new BadRequestException('Mạng này chưa khả dụng, vui lòng chọn mạng khác');
+    }
+    return net;
+  }
+
   /**
    * Tạo lượt nạp mới: cấp số tiền USDT riêng duy nhất vĩnh viễn (network+address+expectedAmount)
    * bằng CSPRNG, dựa vào unique index của DB làm hàng rào cuối chống trùng — không tự tin vào việc
    * sinh số ngẫu nhiên không đụng độ, mà thử tạo thật và bắt lỗi duplicate key để thử số khác.
    */
-  async createDeposit(userId: string, requestedAmountMicro: number): Promise<CertDepositDocument> {
+  async createDeposit(userId: string, requestedAmountMicro: number, networkKey: string): Promise<CertDepositDocument> {
     const s = await this.settings.get();
-    if (!s.binanceBepAddress) throw new BadRequestException('Chưa cấu hình địa chỉ nhận BEP20');
+    const net = this.resolveNetwork(s, networkKey);
     if (requestedAmountMicro < s.depositMinMicro || requestedAmountMicro > s.depositMaxMicro) {
       throw new BadRequestException(
         `Số tiền phải từ ${s.depositMinMicro / 1e6} đến ${s.depositMaxMicro / 1e6} USDT`,
@@ -54,15 +65,58 @@ export class CertWalletService {
     });
     if (existing) throw new BadRequestException('Bạn đang có một lượt nạp chưa hoàn tất, vui lòng chờ hết hạn hoặc hoàn tất trước');
 
-    const serviceFeeMicro = s.depositServiceFeeMicro;
+    return this.reserveDeposit({ userId, requestedAmountMicro, net });
+  }
+
+  /**
+   * Thanh toán USDT trực tiếp cho một đơn (không qua ví): tìm-hoặc-tạo lượt chuyển gắn với orderCode.
+   * Cùng công thức/cơ chế chống trùng như createDeposit(), chỉ khác requestedAmountMicro lấy từ giá
+   * đơn (quy đổi theo tỷ giá hiện tại) thay vì khách tự nhập. Phí dịch vụ áp như nạp ví, không miễn.
+   * Gọi lại khi lượt trước hết hạn sẽ tự cấp một lượt mới (không cần endpoint "tạo lại" riêng).
+   */
+  async orderPayment(
+    order: { _id: unknown; code: string; price: number; userId: string },
+    networkKey: string,
+  ): Promise<CertDepositDocument> {
+    const existing = await this.depositModel.findOne({
+      orderCode: order.code,
+      status: CertDepositStatus.Pending,
+      expiresAt: { $gt: new Date() },
+    });
+    if (existing) return existing;
+
+    const s = await this.settings.get();
+    const net = this.resolveNetwork(s, networkKey);
+    const requestedAmountMicro = Math.round((order.price / s.usdtVndRate) * 1e6);
+
+    return this.reserveDeposit({
+      userId: order.userId,
+      requestedAmountMicro,
+      net,
+      orderId: String(order._id),
+      orderCode: order.code,
+    });
+  }
+
+  private async reserveDeposit(opts: {
+    userId: string;
+    requestedAmountMicro: number;
+    net: ShopSettings['usdtNetworks'][number];
+    orderId?: string;
+    orderCode?: string;
+  }): Promise<CertDepositDocument> {
+    const { userId, requestedAmountMicro, net, orderId, orderCode } = opts;
+    const serviceFeeMicro = net.feeMicro;
     for (let i = 0; i < RESERVE_RETRIES; i++) {
       const adjustmentMicro = randomInt(1, MAX_ADJUSTMENT_MICRO + 1);
       const expectedAmountMicro = requestedAmountMicro + serviceFeeMicro + adjustmentMicro;
       try {
         return await this.depositModel.create({
           userId,
-          network: 'BSC',
-          address: s.binanceBepAddress,
+          ...(orderId && { orderId, orderCode }),
+          network: net.binanceNetwork,
+          networkLabel: net.label,
+          address: net.address,
           requestedAmountMicro,
           serviceFeeMicro,
           adjustmentMicro,
@@ -75,7 +129,12 @@ export class CertWalletService {
         if (!isDuplicateKey(e)) throw e;
       }
     }
-    throw new BadRequestException('Không thể cấp số tiền nạp riêng lúc này, vui lòng thử lại sau ít phút');
+    throw new BadRequestException('Không thể cấp số tiền riêng lúc này, vui lòng thử lại sau ít phút');
+  }
+
+  /** Lượt USDT gần nhất gắn với một đơn (để trang chi tiết đơn hiện lại QR/trạng thái khi load lại). */
+  async findOrderDeposit(orderCode: string): Promise<CertDepositDocument | null> {
+    return this.depositModel.findOne({ orderCode }).sort({ createdAt: -1 });
   }
 
   async get(userId: string, id: string): Promise<CertDepositDocument | null> {
@@ -117,6 +176,14 @@ export class CertWalletService {
       { status: CertDepositStatus.Credited, creditedAt: new Date(), providerDepositId, txId, creditedVndRate: rate, creditedVnd },
     );
     if (!claimed) return false;
+
+    // Trả trực tiếp cho đơn: không cộng ví/ghi ledger, chỉ gửi đơn sang nhà cung cấp. fulfill() đã
+    // tự atomic/idempotent (claim-gate theo trạng thái đơn) nên gọi lại không fulfill 2 lần.
+    if (deposit.orderId) {
+      await this.orders.fulfill(deposit.orderId);
+      this.log.log(`Đơn ${deposit.orderCode} đã nhận đủ USDT, đã gửi fulfill (nạp ${deposit._id})`);
+      return true;
+    }
 
     const idempotencyKey = `binance-deposit:${providerDepositId}`;
     try {

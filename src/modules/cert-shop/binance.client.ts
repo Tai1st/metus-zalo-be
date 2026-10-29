@@ -17,6 +17,15 @@ export interface BinanceDepositRecord {
   travelRuleStatus?: number;
 }
 
+export interface BinanceNetworkInfo {
+  network: string;
+  name: string;
+  depositEnable: boolean;
+  depositDesc?: string;
+  minConfirm?: number;
+  busy?: boolean;
+}
+
 const BASE_URL = 'https://api.binance.com';
 const RECV_WINDOW = 5000;
 
@@ -69,5 +78,18 @@ export class BinanceClient {
       ...(opts.startTime && { startTime: opts.startTime }),
       ...(opts.endTime && { endTime: opts.endTime }),
     });
+  }
+
+  /**
+   * Danh sách mạng Binance thực sự hỗ trợ cho USDT trên tài khoản này (config/getall). Chỉ để admin
+   * xem và chép đúng mã mạng (`network`) khi cấu hình — KHÔNG tự suy ra mã từ nhãn UI (vd "BEP20"),
+   * vì mã thật phải lấy từ chính Binance như tài liệu đặc tả yêu cầu.
+   */
+  async usdtNetworks(): Promise<BinanceNetworkInfo[]> {
+    const all = await this.signedGet<Array<{ coin: string; networkList?: BinanceNetworkInfo[] }>>(
+      '/sapi/v1/capital/config/getall',
+      {},
+    );
+    return all.find((c) => c.coin === 'USDT')?.networkList ?? [];
   }
 }

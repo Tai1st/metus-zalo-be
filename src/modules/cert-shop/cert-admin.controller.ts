@@ -20,6 +20,7 @@ import type { Request } from 'express';
 import { Model } from 'mongoose';
 import { Public } from '../../common/decorators/public.decorator';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { BinanceClient } from './binance.client';
 import { CertAppService } from './cert-app.service';
 import { CertQuickAppService } from './cert-quick-app.service';
 import { CertOrdersService } from './cert-orders.service';
@@ -45,6 +46,7 @@ export class CertAdminController {
     private readonly provider: ChungchiClient,
     private readonly orders: CertOrdersService,
     private readonly settings: CertSettingsService,
+    private readonly binance: BinanceClient,
     private readonly apps: CertAppService,
     private readonly quickApps: CertQuickAppService,
     @InjectModel(CertOrder.name) private readonly orderModel: Model<CertOrderDocument>,
@@ -112,6 +114,15 @@ export class CertAdminController {
   @Put('settings')
   updateSettings(@Body() dto: UpdateCertSettingsDto) {
     return this.settings.update(dto);
+  }
+
+  /**
+   * Danh sách mạng USDT Binance thực sự hỗ trợ trên tài khoản này (config/getall) — chỉ để admin xem
+   * và CHÉP ĐÚNG mã mạng khi bật một mạng mới trong usdtNetworks, không tự suy ra mã từ nhãn UI.
+   */
+  @Get('binance/usdt-networks')
+  usdtNetworks() {
+    return this.binance.usdtNetworks();
   }
 
   /**

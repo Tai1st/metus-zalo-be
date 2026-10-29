@@ -33,7 +33,7 @@ import { CertSettingsService, ShopSettings } from './cert-settings.service';
 import { CertShopGuard, OptionalAuth, ShopUser } from './cert-shop.guard';
 import { CertWalletService } from './cert-wallet.service';
 import { ChungchiClient } from './chungchi.client';
-import { CheckCertDto, CreateDepositDto, CreateOrderDto } from './dto/cert-shop.dto';
+import { CheckCertDto, CreateDepositDto, CreateOrderDto, UsdtOrderPaymentDto } from './dto/cert-shop.dto';
 import { CertEnroll, CertEnrollDocument } from './schemas/cert-enroll.schema';
 import {
   CertOrder,
@@ -155,6 +155,7 @@ export class CertShopController {
       costCurrency: plan.currency,
       price,
       p12Password: dto.p12Password || this.orders.newP12Password(),
+      paymentMethod: dto.paymentMethod || 'vietqr',
     });
 
     if (dto.paymentMethod === 'balance') {
@@ -177,7 +178,38 @@ export class CertShopController {
   @Get('orders/:code')
   async one(@Req() req: Authed, @Param('code') code: string) {
     const order = await this.owned(req.user, code);
-    return this.view(order, true, await this.settings.get());
+    return this.view(order, true, await this.settings.get(), await this.usdtPaymentView(order));
+  }
+
+  /**
+   * Trả USDT trực tiếp cho một đơn: tìm-hoặc-tạo lượt chuyển gắn với đơn (xem CertWalletService.orderPayment).
+   * Tách riêng endpoint (không tự tạo lúc GET order) để khách chọn mạng ngay tại đây, giống bước
+   * "tạo lượt nạp" của ví — tránh phải chọn mạng từ lúc checkout.
+   */
+  @UseGuards(CertShopGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('orders/:code/usdt-payment')
+  async orderUsdtPayment(@Req() req: Authed, @Param('code') code: string, @Body() dto: UsdtOrderPaymentDto) {
+    const order = await this.owned(req.user, code);
+    if (order.status !== CertOrderStatus.AwaitingPayment) throw new ConflictException('Đơn không ở trạng thái chờ thanh toán');
+    if (order.paymentMethod !== 'usdt') throw new ConflictException('Đơn này không chọn thanh toán bằng USDT');
+    const d = await this.wallet.orderPayment(
+      { _id: order._id, code: order.code, price: order.price, userId: order.userId },
+      dto.network,
+    );
+    return this.depositView(d);
+  }
+
+  /** Danh sách mạng USDT khả dụng + lượt chuyển đang/đã gắn với đơn (nếu có), cho trang chi tiết đơn. */
+  private async usdtPaymentView(order: CertOrderDocument) {
+    if (order.paymentMethod !== 'usdt' || order.status !== CertOrderStatus.AwaitingPayment) return undefined;
+    const [s, deposit] = await Promise.all([this.settings.get(), this.wallet.findOrderDeposit(order.code)]);
+    return {
+      networks: s.usdtNetworks
+        .filter((n) => n.enabled && n.address && n.binanceNetwork)
+        .map((n) => ({ key: n.key, label: n.label, feeUsdt: n.feeMicro / 1e6 })),
+      deposit: deposit ? this.depositView(deposit) : null,
+    };
   }
 
   // Polling dự phòng khi webhook không tới (nhà cung cấp chỉ gửi webhook một lần).
@@ -407,17 +439,16 @@ export class CertShopController {
     return { jobId: job.id };
   }
 
-  // ---- ví USDT (MVP: chỉ mạng BEP20) ----
+  // ---- ví USDT (nhiều mạng) ----
   @UseGuards(CertShopGuard)
   @Get('wallet')
   async walletInfo(@Req() req: Authed) {
     const [balanceVnd, s] = await Promise.all([this.wallet.balanceVnd(req.user.id), this.settings.get()]);
     return {
       balanceVnd,
-      network: 'BSC',
-      networkLabel: 'BEP20',
-      address: s.binanceBepAddress || null,
-      serviceFeeUsdt: s.depositServiceFeeMicro / 1e6,
+      networks: s.usdtNetworks
+        .filter((n) => n.enabled && n.address && n.binanceNetwork)
+        .map((n) => ({ key: n.key, label: n.label, feeUsdt: n.feeMicro / 1e6 })),
       minUsdt: s.depositMinMicro / 1e6,
       maxUsdt: s.depositMaxMicro / 1e6,
       usdtVndRate: s.usdtVndRate,
@@ -428,7 +459,7 @@ export class CertShopController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('wallet/deposits')
   async createDeposit(@Req() req: Authed, @Body() dto: CreateDepositDto) {
-    const d = await this.wallet.createDeposit(req.user.id, Math.round(dto.requestedAmount * 1e6));
+    const d = await this.wallet.createDeposit(req.user.id, Math.round(dto.requestedAmount * 1e6), dto.network);
     return this.depositView(d);
   }
 
@@ -457,6 +488,7 @@ export class CertShopController {
   private depositView(d: {
     _id: unknown;
     network: string;
+    networkLabel: string;
     address: string;
     requestedAmountMicro: number;
     serviceFeeMicro: number;
@@ -469,7 +501,7 @@ export class CertShopController {
     return {
       id: String(d._id),
       network: d.network,
-      networkLabel: d.network === 'BSC' ? 'BEP20' : d.network,
+      networkLabel: d.networkLabel,
       address: d.address,
       requestedAmount: (d.requestedAmountMicro / 1e6).toFixed(6),
       serviceFee: (d.serviceFeeMicro / 1e6).toFixed(6),
@@ -523,7 +555,12 @@ export class CertShopController {
     return order;
   }
 
-  private view(o: CertOrderDocument, detail: boolean, s?: ShopSettings) {
+  private view(
+    o: CertOrderDocument,
+    detail: boolean,
+    s?: ShopSettings,
+    usdtPayment?: Awaited<ReturnType<CertShopController['usdtPaymentView']>>,
+  ) {
     return {
       code: o.code,
       udid: o.udid,
@@ -532,6 +569,7 @@ export class CertShopController {
       price: o.price,
       currency: o.currency,
       status: o.status,
+      paymentMethod: o.paymentMethod,
       hasProvider: Boolean(o.providerOrderCode),
       createdAt: (o as unknown as { createdAt: Date }).createdAt,
       ...(detail && {
@@ -539,7 +577,10 @@ export class CertShopController {
         // Mật khẩu .p12 chỉ lộ khi cert đã sẵn sàng.
         p12Password: o.status === CertOrderStatus.Completed ? o.p12Password : undefined,
         payment:
-          s && o.status === CertOrderStatus.AwaitingPayment ? this.orders.payment(o, s) : undefined,
+          s && o.paymentMethod !== 'usdt' && o.status === CertOrderStatus.AwaitingPayment
+            ? this.orders.payment(o, s)
+            : undefined,
+        usdtPayment,
       }),
     };
   }

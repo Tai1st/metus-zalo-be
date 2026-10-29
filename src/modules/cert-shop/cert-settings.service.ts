@@ -4,7 +4,20 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { decryptSecret, encryptSecret } from '../../common/crypto';
 import { UpdateCertSettingsDto } from './dto/cert-shop.dto';
-import { CertSetting, CertSettingDocument } from './schemas/cert-setting.schema';
+import { CertSetting, CertSettingDocument, UsdtNetworkConfig } from './schemas/cert-setting.schema';
+
+/**
+ * Danh mục mạng mục tiêu (theo đặc tả): chỉ BEP20 coi là đã xác minh (binanceNetwork='BSC', đã test
+ * thật) nên bật sẵn nếu có địa chỉ. Các mạng còn lại để admin tự điền binanceNetwork + địa chỉ sau khi
+ * xác minh qua Binance thật — mặc định tắt, không đoán mã mạng.
+ */
+const NETWORK_CATALOG: Omit<UsdtNetworkConfig, 'address' | 'enabled'>[] = [
+  { key: 'bep20', label: 'BEP20', binanceNetwork: 'BSC', feeMicro: 50_000 },
+  { key: 'ton', label: 'TON', binanceNetwork: '', feeMicro: 500_000 },
+  { key: 'arbitrum', label: 'ARBITRUM', binanceNetwork: '', feeMicro: 500_000 },
+  { key: 'polygon', label: 'POLYGON', binanceNetwork: '', feeMicro: 50_000 },
+  { key: 'trc20', label: 'TRC20', binanceNetwork: '', feeMicro: 1_500_000 },
+];
 
 export interface ShopSettings {
   siteUrl: string;
@@ -25,8 +38,7 @@ export interface ShopSettings {
   web2mToken: string;
   binanceApiKey: string;
   binanceApiSecret: string;
-  binanceBepAddress: string;
-  depositServiceFeeMicro: number;
+  usdtNetworks: UsdtNetworkConfig[];
   depositMinMicro: number;
   depositMaxMicro: number;
   usdtVndRate: number;
@@ -55,6 +67,25 @@ export class CertSettingsService {
 
   private get secret() {
     return this.config.getOrThrow<string>('COOKIE_SECRET');
+  }
+
+  /**
+   * Danh mục mạng đầy đủ = cấu hình admin đã lưu đè lên khung mặc định. Lần đầu (chưa ai lưu
+   * usdtNetworks) thì migrate từ field BEP20 cũ (binanceBepAddress/depositServiceFeeMicro) một lần.
+   */
+  private mergeNetworks(d: CertSettingDocument | null): UsdtNetworkConfig[] {
+    const stored = new Map((d?.usdtNetworks ?? []).map((n) => [n.key, n]));
+    if (!stored.size && d?.binanceBepAddress) {
+      stored.set('bep20', {
+        key: 'bep20',
+        label: 'BEP20',
+        binanceNetwork: 'BSC',
+        address: d.binanceBepAddress,
+        feeMicro: d.depositServiceFeeMicro ?? 50_000,
+        enabled: true,
+      });
+    }
+    return NETWORK_CATALOG.map((def) => ({ ...def, address: '', enabled: false, ...stored.get(def.key) }));
   }
 
   async get(): Promise<ShopSettings> {
@@ -88,8 +119,7 @@ export class CertSettingsService {
       web2mToken: dec(d?.web2mTokenEnc) || env('WEB2M_TOKEN', ''),
       binanceApiKey: dec(d?.binanceApiKeyEnc) || env('BINANCE_API_KEY', ''),
       binanceApiSecret: dec(d?.binanceApiSecretEnc) || env('BINANCE_API_SECRET', ''),
-      binanceBepAddress: d?.binanceBepAddress || env('BINANCE_BEP_ADDRESS', ''),
-      depositServiceFeeMicro: d?.depositServiceFeeMicro ?? Number(env('DEPOSIT_SERVICE_FEE_MICRO', 50_000)),
+      usdtNetworks: this.mergeNetworks(d),
       depositMinMicro: d?.depositMinMicro ?? Number(env('DEPOSIT_MIN_MICRO', 5_000_000)),
       depositMaxMicro: d?.depositMaxMicro ?? Number(env('DEPOSIT_MAX_MICRO', 1_000_000_000)),
       usdtVndRate: d?.usdtVndRate ?? Number(env('USDT_VND_RATE', 25400)),
@@ -116,8 +146,7 @@ export class CertSettingsService {
       hasWeb2mToken: Boolean(s.web2mToken),
       hasBinanceKey: Boolean(s.binanceApiKey),
       hasBinanceSecret: Boolean(s.binanceApiSecret),
-      binanceBepAddress: s.binanceBepAddress,
-      depositServiceFeeMicro: s.depositServiceFeeMicro,
+      usdtNetworks: s.usdtNetworks,
       depositMinMicro: s.depositMinMicro,
       depositMaxMicro: s.depositMaxMicro,
       usdtVndRate: s.usdtVndRate,
@@ -162,13 +191,13 @@ export class CertSettingsService {
       'priceMarkup',
       'priceRoundTo',
       'chungchiBaseUrl',
-      'binanceBepAddress',
-      'depositServiceFeeMicro',
       'depositMinMicro',
       'depositMaxMicro',
       'usdtVndRate',
     ] as const;
     for (const k of plain) if (dto[k] !== undefined) set[k] = dto[k];
+    // Lưu nguyên mảng (thay toàn bộ): FE gửi lại cả bảng đã sửa mỗi lần lưu, đơn giản hơn patch từng dòng.
+    if (dto.usdtNetworks !== undefined) set.usdtNetworks = dto.usdtNetworks;
     if (dto.planFeatures !== undefined) {
       const lines = dto.planFeatures.map((l) => l.trim()).filter(Boolean);
       // Danh sách rỗng = quay về mặc định

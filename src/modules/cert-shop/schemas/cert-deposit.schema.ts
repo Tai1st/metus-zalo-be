@@ -17,7 +17,10 @@ export enum CertDepositStatus {
 @Schema({ collection: 'cert_deposits', timestamps: true })
 export class CertDeposit {
   @Prop({ required: true, index: true }) userId: string;
-  @Prop({ required: true, default: 'BSC' }) network: string;
+  /** Mã mạng Binance thật (vd 'BSC', 'TRX') — dùng để khớp với trường network của Binance deposit/hisrec. */
+  @Prop({ required: true }) network: string;
+  /** Nhãn hiển thị snapshot lúc tạo (vd 'BEP20') — đổi cấu hình admin sau này không ảnh hưởng lượt đã tạo. */
+  @Prop({ required: true }) networkLabel: string;
   @Prop({ required: true }) address: string;
   @Prop({ required: true }) requestedAmountMicro: number;
   @Prop({ required: true }) serviceFeeMicro: number;
@@ -41,6 +44,9 @@ export class CertDeposit {
   /** Snapshot tỷ giá USDT→VND và số VND thực cộng tại thời điểm credit (không đổi về sau dù tỷ giá admin cập nhật). */
   @Prop() creditedVndRate?: number;
   @Prop() creditedVnd?: number;
+  /** Khi có giá trị: đây là lượt trả trực tiếp cho 1 đơn (không cộng ví) — xem CertWalletService.orderPayment(). */
+  @Prop() orderId?: string;
+  @Prop({ index: true }) orderCode?: string;
 }
 
 export type CertDepositDocument = HydratedDocument<CertDeposit>;

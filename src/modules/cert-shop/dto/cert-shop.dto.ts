@@ -13,6 +13,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { CertOrderStatus } from '../schemas/cert-order.schema';
 
@@ -56,13 +57,28 @@ export class CreateOrderDto {
   @Matches(/^[A-Za-z0-9]{1,32}$/, { message: 'Mật khẩu chứng chỉ chỉ gồm chữ và số, tối đa 32 ký tự' })
   p12Password?: string;
 
-  /** 'balance' = trả ngay bằng số dư ví, không qua VietQR. Mặc định vietqr. */
-  @IsOptional() @IsIn(['vietqr', 'balance']) paymentMethod?: 'vietqr' | 'balance';
+  /** 'balance' = trả ngay bằng số dư ví; 'usdt' = chuyển USDT trực tiếp cho đơn này. Mặc định vietqr. */
+  @IsOptional() @IsIn(['vietqr', 'balance', 'usdt']) paymentMethod?: 'vietqr' | 'balance' | 'usdt';
 }
 
 export class CreateDepositDto {
   /** USDT, tối đa 6 chữ số thập phân — BE tự nhân 1e6 và validate min/max theo cấu hình. */
   @IsNumber({ maxDecimalPlaces: 6 }) @Min(0.000001) requestedAmount: number;
+  /** Khóa mạng nội bộ, vd 'bep20' | 'ton' | 'arbitrum' | 'polygon' | 'trc20'. */
+  @IsString() @MinLength(1) @MaxLength(20) network: string;
+}
+
+export class UsdtOrderPaymentDto {
+  @IsString() @MinLength(1) @MaxLength(20) network: string;
+}
+
+export class UsdtNetworkConfigDto {
+  @IsString() @MinLength(1) @MaxLength(20) key: string;
+  @IsString() @MinLength(1) @MaxLength(40) label: string;
+  @IsOptional() @IsString() @MaxLength(40) binanceNetwork?: string;
+  @IsOptional() @IsString() @MaxLength(200) address?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) feeMicro?: number;
+  @IsOptional() enabled?: boolean;
 }
 
 export class UpdateCertSettingsDto {
@@ -86,8 +102,9 @@ export class UpdateCertSettingsDto {
 
   @IsOptional() @IsString() @MaxLength(300) binanceApiKey?: string;
   @IsOptional() @IsString() @MaxLength(300) binanceApiSecret?: string;
-  @IsOptional() @IsString() @MaxLength(100) binanceBepAddress?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) depositServiceFeeMicro?: number;
+  /** Gửi lại toàn bộ bảng mạng mỗi lần lưu (thay nguyên mảng, không patch từng dòng). */
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => UsdtNetworkConfigDto)
+  usdtNetworks?: UsdtNetworkConfigDto[];
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) depositMinMicro?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) depositMaxMicro?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) usdtVndRate?: number;

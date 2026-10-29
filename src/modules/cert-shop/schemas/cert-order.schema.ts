@@ -30,6 +30,9 @@ export class CertOrder {
   @Prop({ required: true }) price: number;
   @Prop({ default: 'VND' }) currency: string;
   @Prop() p12Password: string;
+  /** Phương thức đã chọn lúc tạo đơn — quyết định trang chi tiết hiện VietQR hay USDT. */
+  @Prop({ type: String, enum: ['vietqr', 'balance', 'usdt'], default: 'vietqr' })
+  paymentMethod: 'vietqr' | 'balance' | 'usdt';
   @Prop({
     type: String,
     enum: Object.values(CertOrderStatus),
