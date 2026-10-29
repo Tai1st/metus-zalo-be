@@ -101,13 +101,31 @@ export class ChungchiClient {
     ).order;
   }
 
-  /** Đơn gần đây của một UDID bên nhà cung cấp — dùng để tránh tạo trùng khi gửi lại đơn sau lỗi mơ hồ (xem fulfill()). */
-  async ordersByUdid(udid: string, limit = 20): Promise<ProviderOrder[]> {
-    return (
-      await this.call<{ orders: ProviderOrder[] }>(
-        `/api/v1/devices/${encodeURIComponent(udid)}/orders?limit=${limit}`,
-      )
-    ).orders;
+  /** Một trang đơn của một UDID bên nhà cung cấp (API có phân trang bằng cursor, tối đa limit=50/trang). */
+  async ordersByUdidPage(udid: string, cursor?: number, limit = 50): Promise<{ orders: ProviderOrder[]; nextCursor: number | null }> {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (cursor !== undefined) qs.set('cursor', String(cursor));
+    const r = await this.call<{ orders: ProviderOrder[]; next_cursor: number | null }>(
+      `/api/v1/devices/${encodeURIComponent(udid)}/orders?${qs}`,
+    );
+    return { orders: r.orders, nextCursor: r.next_cursor };
+  }
+
+  /**
+   * Toàn bộ đơn của một UDID — dùng để tránh tạo trùng khi gửi lại đơn sau lỗi mơ hồ (xem fulfill()).
+   * Tự lặp qua cursor cho tới hết (không giả định trang đầu đã đủ), chặn trần số trang để không gọi
+   * vô hạn nếu nhà cung cấp trả next_cursor sai/lặp.
+   */
+  async ordersByUdid(udid: string, maxPages = 20): Promise<ProviderOrder[]> {
+    const all: ProviderOrder[] = [];
+    let cursor: number | undefined;
+    for (let i = 0; i < maxPages; i++) {
+      const { orders, nextCursor } = await this.ordersByUdidPage(udid, cursor);
+      all.push(...orders);
+      if (nextCursor === null || nextCursor === undefined) break;
+      cursor = nextCursor;
+    }
+    return all;
   }
 
   // Đường dẫn "chekcert" viết sai đúng như tài liệu nhà cung cấp.
