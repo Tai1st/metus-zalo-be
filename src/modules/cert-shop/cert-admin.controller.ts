@@ -96,6 +96,7 @@ export class CertAdminController {
         status: o.status,
         error: o.error,
         providerOrderCode: o.providerOrderCode,
+        providerAttempts: o.providerAttempts,
         createdAt: (o as unknown as { createdAt: Date }).createdAt,
         paidAt: o.paidAt,
       })),

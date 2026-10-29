@@ -41,6 +41,12 @@ export class CertOrder {
   @Prop({ index: true }) providerOrderCode?: string;
   @Prop() downloadUrl?: string;
   @Prop({ default: '' }) error: string;
+  /**
+   * Số lần đã thực sự gọi sang nhà cung cấp để tạo đơn (kể cả lần lỗi). Nhà cung cấp không hỗ trợ
+   * idempotency key, nên nếu lần gọi trước timeout/mất phản hồi, KHÔNG chắc họ đã tạo đơn/trừ ví
+   * hay chưa — gửi lại có thể tạo đơn thật thứ hai. Dùng để cảnh báo admin trước khi "Gửi lại đơn".
+   */
+  @Prop({ default: 0 }) providerAttempts: number;
 }
 
 export type CertOrderDocument = HydratedDocument<CertOrder>;

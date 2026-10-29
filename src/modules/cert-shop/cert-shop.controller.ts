@@ -123,11 +123,13 @@ export class CertShopController {
   @UseGuards(CertShopGuard)
   @Post('orders')
   async create(@Req() req: Authed, @Body() dto: CreateOrderDto) {
-    const enroll = await this.enrollModel.findOne({
+    // Khóa + xóa enroll ngay lập tức (nguyên tử): chặn 2 request cùng lúc (double-click, mạng lag
+    // khiến FE gửi lại...) cùng dùng một enrollToken để tạo 2 đơn riêng cho cùng một lượt mua.
+    const enroll = await this.enrollModel.findOneAndDelete({
       token: dto.enrollToken,
       userId: req.user.id,
     });
-    if (!enroll?.udid) throw new BadRequestException('Chưa lấy được UDID');
+    if (!enroll?.udid) throw new BadRequestException('Chưa lấy được UDID, hoặc đơn đã được tạo trước đó');
 
     // Giá lấy lại từ nhà cung cấp, không tin client.
     const [plans, s] = await Promise.all([this.provider.plans(), this.settings.get()]);
@@ -146,7 +148,6 @@ export class CertShopController {
       price: this.orders.sellPrice(plan.amount, s),
       p12Password: dto.p12Password || this.orders.newP12Password(),
     });
-    await this.enrollModel.deleteOne({ _id: enroll._id });
     return { code: order.code };
   }
 

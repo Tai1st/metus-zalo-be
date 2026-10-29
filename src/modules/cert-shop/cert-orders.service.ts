@@ -75,6 +75,7 @@ export class CertOrdersService {
     );
     if (!order) return this.model.findById(orderId);
 
+    order.providerAttempts += 1;
     try {
       const po = await this.provider.createOrder({
         plan_id: order.planId,
