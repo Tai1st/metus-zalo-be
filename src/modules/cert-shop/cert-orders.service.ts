@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomInt } from 'node:crypto';
@@ -14,6 +14,8 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 @Injectable()
 export class CertOrdersService {
+  private readonly log = new Logger(CertOrdersService.name);
+
   constructor(
     @InjectModel(CertOrder.name)
     private readonly model: Model<CertOrderDocument>,
@@ -81,7 +83,22 @@ export class CertOrdersService {
       // tra lịch sử đơn theo UDID trước khi gọi tạo đơn mới, tránh trừ ví/tạo đơn thật lần 2.
       if (order.providerAttempts > 0) {
         const createdAt = (order as unknown as { createdAt: Date }).createdAt;
-        const existing = (await this.provider.ordersByUdid(order.udid).catch(() => []))
+        let history: ProviderOrder[];
+        try {
+          history = await this.provider.ordersByUdid(order.udid);
+        } catch (e) {
+          // QUAN TRỌNG: không kiểm tra được thì KHÔNG được coi như "chắc chắn chưa có đơn" rồi tạo
+          // mới — nếu đơn thật đã tồn tại (vd lần trước timeout sau khi họ đã tạo xong), tạo thêm sẽ
+          // tính tiền 2 lần. Dừng hẳn ở đây, không rơi xuống nhánh tạo đơn mới bên dưới.
+          this.log.warn(
+            `Không tra được lịch sử đơn UDID ${order.udid} (đơn ${order.code}) để chống trùng: ${e instanceof Error ? e.message : e}`,
+          );
+          order.status = CertOrderStatus.Paid;
+          order.error = 'Không kiểm tra được đơn trùng bên nhà cung cấp (lỗi kết nối), vui lòng thử gửi lại sau ít phút';
+          await order.save();
+          return order;
+        }
+        const existing = history
           .filter((o) => String(o.plan_id) === String(order.planId) && (!o.created_at || new Date(o.created_at) >= createdAt))
           .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0];
         if (existing) {
@@ -102,7 +119,11 @@ export class CertOrdersService {
       order.providerOrderCode = po.order_code;
       this.apply(order, po);
     } catch (e) {
-      // Chưa tạo được đơn bên nhà cung cấp: giữ "paid" để admin bấm gửi lại.
+      // Chưa tạo được đơn bên nhà cung cấp: giữ "paid" để admin bấm gửi lại. Log đầy đủ vì trước đây
+      // lỗi bị nuốt hoàn toàn (không in gì) nên không debug được khi khách báo "Lỗi không xác định".
+      this.log.error(
+        `Gửi đơn ${order.code} sang nhà cung cấp lỗi: ${e instanceof Error ? (e.stack ?? e.message) : e}`,
+      );
       order.status = CertOrderStatus.Paid;
       order.error =
         e instanceof ProviderError
