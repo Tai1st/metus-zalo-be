@@ -27,7 +27,7 @@ import { CertOrdersService } from './cert-orders.service';
 import { CertSettingsService } from './cert-settings.service';
 import { CertAdmin, CertShopGuard } from './cert-shop.guard';
 import { ChungchiClient } from './chungchi.client';
-import { AdminOrdersQuery, ImportRepoDto, UpdateCertSettingsDto } from './dto/cert-shop.dto';
+import { AdminOrdersQuery, ImportRepoDto, LinkProviderOrderDto, UpdateCertSettingsDto } from './dto/cert-shop.dto';
 import {
   CertOrder,
   CertOrderDocument,
@@ -269,6 +269,19 @@ export class CertAdminController {
     if (!order) throw new NotFoundException('Không tìm thấy đơn');
     const r = await this.orders.fulfill(String(order._id));
     return { status: r?.status, error: r?.error };
+  }
+
+  /**
+   * Gắn thủ công đơn chungchi.store đã biết (admin tự đọc order_code trên dashboard của họ) khi cơ
+   * chế tự dò theo UDID không chắc chắn hoặc không tìm thấy — khớp đúng mã nên không cần đoán.
+   */
+  @HttpCode(200)
+  @Post('orders/:code/link-provider')
+  async linkProvider(@Param('code') code: string, @Body() dto: LinkProviderOrderDto) {
+    const order = await this.orderModel.findOne({ code });
+    if (!order) throw new NotFoundException('Không tìm thấy đơn');
+    const r = await this.orders.linkProvider(String(order._id), dto.providerOrderCode.trim());
+    return { status: r.status, error: r.error, providerOrderCode: r.providerOrderCode };
   }
 
   @HttpCode(200)

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomInt } from 'node:crypto';
@@ -141,6 +141,34 @@ export class CertOrdersService {
     this.apply(order, await this.provider.getOrder(providerOrderCode));
     await order.save();
     return order;
+  }
+
+  /**
+   * Gắn thủ công một đơn chungchi.store đã biết (admin tự đọc order_code trên dashboard của họ) vào
+   * đơn của mình — đáng tin hơn dò theo UDID+thời gian vì khớp đúng mã, không suy đoán. Chỉ cho gắn
+   * khi đơn mình CHƯA có providerOrderCode (atomic, tránh ghi đè đơn đã gắn đúng từ trước), và chỉ
+   * khi UDID của đơn chungchi.store khớp đúng UDID đơn mình — chặn admin dán nhầm mã của đơn khác.
+   */
+  async linkProvider(orderId: string, providerOrderCode: string) {
+    const order = await this.model.findOne({ _id: orderId, providerOrderCode: { $in: [null, ''] } });
+    if (!order) throw new ConflictException('Đơn không tồn tại hoặc đã được gắn với nhà cung cấp từ trước');
+
+    const po = await this.provider.getOrder(providerOrderCode);
+    if (po.udid && po.udid.toUpperCase() !== order.udid.toUpperCase()) {
+      throw new ConflictException(
+        `Đơn ${providerOrderCode} bên nhà cung cấp thuộc UDID khác (${po.udid}), không khớp đơn này (${order.udid})`,
+      );
+    }
+
+    const claimed = await this.model.findOneAndUpdate(
+      { _id: orderId, providerOrderCode: { $in: [null, ''] } },
+      { providerOrderCode },
+      { new: true },
+    );
+    if (!claimed) throw new ConflictException('Đơn vừa được gắn bởi thao tác khác, vui lòng tải lại');
+    this.apply(claimed, po);
+    await claimed.save();
+    return claimed;
   }
 
   private apply(order: CertOrderDocument, po: ProviderOrder) {

@@ -128,6 +128,11 @@ export class StartSignDto {
   @IsOptional() @IsString() @MaxLength(60) name?: string;
 }
 
+export class LinkProviderOrderDto {
+  /** Mã đơn bên chungchi.store (vd "A1B2C3") — admin tự đọc từ dashboard của họ. */
+  @IsString() @MinLength(1) @MaxLength(20) providerOrderCode: string;
+}
+
 export class AdminOrdersQuery {
   @IsOptional()
   @IsIn(Object.values(CertOrderStatus))
