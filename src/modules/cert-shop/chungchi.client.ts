@@ -54,7 +54,7 @@ export class ChungchiClient {
         Accept: 'application/json',
         ...init.headers,
       },
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(30_000),
     });
     const text = await res.text();
     let json: Record<string, any> = {};
