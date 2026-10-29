@@ -34,6 +34,18 @@ export class CertSetting {
 
   /** Token API web2m.com (lịch sử giao dịch ACB) dùng để tự động xác nhận thanh toán. */
   @Prop() web2mTokenEnc?: string;
+
+  // ---- nạp USDT qua Binance (MVP: chỉ mạng BEP20/BSC) ----
+  @Prop() binanceApiKeyEnc?: string;
+  @Prop() binanceApiSecretEnc?: string;
+  /** Địa chỉ nhận BEP20 đã xác minh thủ công khớp với màn hình nạp Binance thật — không tự dò. */
+  @Prop() binanceBepAddress?: string;
+  /** Phí dịch vụ cho mỗi lượt nạp, đơn vị micro-USDT (×1e6). */
+  @Prop() depositServiceFeeMicro?: number;
+  @Prop() depositMinMicro?: number;
+  @Prop() depositMaxMicro?: number;
+  /** Tỷ giá quy đổi 1 USDT ra VND khi cộng ví — admin tự cập nhật định kỳ, không tra API ngoài. */
+  @Prop() usdtVndRate?: number;
 }
 
 export type CertSettingDocument = HydratedDocument<CertSetting>;

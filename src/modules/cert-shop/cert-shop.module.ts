@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from '../users/users.module';
+import { BinanceClient } from './binance.client';
 import { CertAdminController } from './cert-admin.controller';
 import { CertAuthController } from './cert-auth.controller';
 import { CertAppService } from './cert-app.service';
 import { CertCheckService } from './cert-check.service';
+import { CertDepositWatcherService } from './cert-deposit-watcher.service';
 import { CertOrdersService } from './cert-orders.service';
 import { CertPaymentWatcherService } from './cert-payment-watcher.service';
 import { CertSettingsService } from './cert-settings.service';
@@ -14,11 +16,15 @@ import { CertShopController } from './cert-shop.controller';
 import { CertSignController } from './cert-sign.controller';
 import { CertSignService } from './cert-sign.service';
 import { CertShopGuard } from './cert-shop.guard';
+import { CertWalletService } from './cert-wallet.service';
 import { ChungchiClient } from './chungchi.client';
+import { CertDeposit, CertDepositSchema } from './schemas/cert-deposit.schema';
 import { CertEnroll, CertEnrollSchema } from './schemas/cert-enroll.schema';
 import { CertOrder, CertOrderSchema } from './schemas/cert-order.schema';
 import { CertQuickApp, CertQuickAppSchema } from './schemas/cert-quick-app.schema';
 import { CertSetting, CertSettingSchema } from './schemas/cert-setting.schema';
+import { CertWallet, CertWalletSchema } from './schemas/cert-wallet.schema';
+import { CertWalletLedger, CertWalletLedgerSchema } from './schemas/cert-wallet-ledger.schema';
 import { CertQuickAppService } from './cert-quick-app.service';
 
 /** Shop bán chứng chỉ iOS. Dùng chung users với Zalo; dữ liệu riêng nằm ở các collection cert_*. */
@@ -30,6 +36,9 @@ import { CertQuickAppService } from './cert-quick-app.service';
       { name: CertEnroll.name, schema: CertEnrollSchema },
       { name: CertSetting.name, schema: CertSettingSchema },
       { name: CertQuickApp.name, schema: CertQuickAppSchema },
+      { name: CertDeposit.name, schema: CertDepositSchema },
+      { name: CertWallet.name, schema: CertWalletSchema },
+      { name: CertWalletLedger.name, schema: CertWalletLedgerSchema },
     ]),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -43,15 +52,18 @@ import { CertQuickAppService } from './cert-quick-app.service';
   ],
   controllers: [CertAuthController, CertShopController, CertSignController, CertAdminController],
   providers: [
+    BinanceClient,
     ChungchiClient,
     CertAppService,
     CertQuickAppService,
     CertCheckService,
+    CertDepositWatcherService,
     CertSignService,
     CertOrdersService,
     CertPaymentWatcherService,
     CertSettingsService,
     CertShopGuard,
+    CertWalletService,
   ],
 })
 export class CertShopModule {}

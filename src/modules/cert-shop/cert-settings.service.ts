@@ -23,6 +23,13 @@ export interface ShopSettings {
   chungchiApiKey: string;
   webhookSecret: string;
   web2mToken: string;
+  binanceApiKey: string;
+  binanceApiSecret: string;
+  binanceBepAddress: string;
+  depositServiceFeeMicro: number;
+  depositMinMicro: number;
+  depositMaxMicro: number;
+  usdtVndRate: number;
 }
 
 const CACHE_MS = 15_000;
@@ -79,6 +86,13 @@ export class CertSettingsService {
       chungchiApiKey: dec(d?.chungchiApiKeyEnc) || env('CHUNGCHI_API_KEY', ''),
       webhookSecret: dec(d?.webhookSecretEnc) || env('CHUNGCHI_WEBHOOK_SECRET', ''),
       web2mToken: dec(d?.web2mTokenEnc) || env('WEB2M_TOKEN', ''),
+      binanceApiKey: dec(d?.binanceApiKeyEnc) || env('BINANCE_API_KEY', ''),
+      binanceApiSecret: dec(d?.binanceApiSecretEnc) || env('BINANCE_API_SECRET', ''),
+      binanceBepAddress: d?.binanceBepAddress || env('BINANCE_BEP_ADDRESS', ''),
+      depositServiceFeeMicro: d?.depositServiceFeeMicro ?? Number(env('DEPOSIT_SERVICE_FEE_MICRO', 50_000)),
+      depositMinMicro: d?.depositMinMicro ?? Number(env('DEPOSIT_MIN_MICRO', 5_000_000)),
+      depositMaxMicro: d?.depositMaxMicro ?? Number(env('DEPOSIT_MAX_MICRO', 1_000_000_000)),
+      usdtVndRate: d?.usdtVndRate ?? Number(env('USDT_VND_RATE', 25400)),
     };
     this.cache = { at: Date.now(), value };
     return value;
@@ -100,6 +114,13 @@ export class CertSettingsService {
       apiKeyHint: s.chungchiApiKey ? `…${s.chungchiApiKey.slice(-4)}` : '',
       hasWebhookSecret: Boolean(s.webhookSecret),
       hasWeb2mToken: Boolean(s.web2mToken),
+      hasBinanceKey: Boolean(s.binanceApiKey),
+      hasBinanceSecret: Boolean(s.binanceApiSecret),
+      binanceBepAddress: s.binanceBepAddress,
+      depositServiceFeeMicro: s.depositServiceFeeMicro,
+      depositMinMicro: s.depositMinMicro,
+      depositMaxMicro: s.depositMaxMicro,
+      usdtVndRate: s.usdtVndRate,
     };
   }
 
@@ -141,6 +162,11 @@ export class CertSettingsService {
       'priceMarkup',
       'priceRoundTo',
       'chungchiBaseUrl',
+      'binanceBepAddress',
+      'depositServiceFeeMicro',
+      'depositMinMicro',
+      'depositMaxMicro',
+      'usdtVndRate',
     ] as const;
     for (const k of plain) if (dto[k] !== undefined) set[k] = dto[k];
     if (dto.planFeatures !== undefined) {
@@ -153,6 +179,8 @@ export class CertSettingsService {
     if (dto.chungchiApiKey) set.chungchiApiKeyEnc = encryptSecret(dto.chungchiApiKey, this.secret);
     if (dto.webhookSecret) set.webhookSecretEnc = encryptSecret(dto.webhookSecret, this.secret);
     if (dto.web2mToken) set.web2mTokenEnc = encryptSecret(dto.web2mToken, this.secret);
+    if (dto.binanceApiKey) set.binanceApiKeyEnc = encryptSecret(dto.binanceApiKey, this.secret);
+    if (dto.binanceApiSecret) set.binanceApiSecretEnc = encryptSecret(dto.binanceApiSecret, this.secret);
 
     await this.model.updateOne(
       { key: 'main' },

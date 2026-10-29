@@ -31,8 +31,9 @@ import { CertCheckService } from './cert-check.service';
 import { CertOrdersService } from './cert-orders.service';
 import { CertSettingsService, ShopSettings } from './cert-settings.service';
 import { CertShopGuard, OptionalAuth, ShopUser } from './cert-shop.guard';
+import { CertWalletService } from './cert-wallet.service';
 import { ChungchiClient } from './chungchi.client';
-import { CheckCertDto, CreateOrderDto } from './dto/cert-shop.dto';
+import { CheckCertDto, CreateDepositDto, CreateOrderDto } from './dto/cert-shop.dto';
 import { CertEnroll, CertEnrollDocument } from './schemas/cert-enroll.schema';
 import {
   CertOrder,
@@ -60,6 +61,7 @@ export class CertShopController {
     private readonly quickApps: CertQuickAppService,
     private readonly signer: CertSignService,
     private readonly checker: CertCheckService,
+    private readonly wallet: CertWalletService,
     @InjectModel(CertOrder.name) private readonly orderModel: Model<CertOrderDocument>,
     @InjectModel(CertEnroll.name) private readonly enrollModel: Model<CertEnrollDocument>,
   ) {}
@@ -123,6 +125,17 @@ export class CertShopController {
   @UseGuards(CertShopGuard)
   @Post('orders')
   async create(@Req() req: Authed, @Body() dto: CreateOrderDto) {
+    // Giá lấy lại từ nhà cung cấp, không tin client. Làm trước khi đụng tới enroll để nếu trả bằng
+    // số dư mà không đủ tiền thì báo lỗi ngay, không lãng phí enroll token (phải lấy UDID lại từ đầu).
+    const [plans, s] = await Promise.all([this.provider.plans(), this.settings.get()]);
+    const plan = plans.find((p) => String(p.id) === dto.planId);
+    if (!plan) throw new NotFoundException('Gói không tồn tại');
+    const price = this.orders.sellPrice(plan.amount, s);
+
+    if (dto.paymentMethod === 'balance' && (await this.wallet.balanceVnd(req.user.id)) < price) {
+      throw new BadRequestException('Số dư không đủ để thanh toán gói này');
+    }
+
     // Khóa + xóa enroll ngay lập tức (nguyên tử): chặn 2 request cùng lúc (double-click, mạng lag
     // khiến FE gửi lại...) cùng dùng một enrollToken để tạo 2 đơn riêng cho cùng một lượt mua.
     const enroll = await this.enrollModel.findOneAndDelete({
@@ -130,11 +143,6 @@ export class CertShopController {
       userId: req.user.id,
     });
     if (!enroll?.udid) throw new BadRequestException('Chưa lấy được UDID, hoặc đơn đã được tạo trước đó');
-
-    // Giá lấy lại từ nhà cung cấp, không tin client.
-    const [plans, s] = await Promise.all([this.provider.plans(), this.settings.get()]);
-    const plan = plans.find((p) => String(p.id) === dto.planId);
-    if (!plan) throw new NotFoundException('Gói không tồn tại');
 
     const order = await this.orderModel.create({
       code: this.orders.newCode(),
@@ -145,9 +153,16 @@ export class CertShopController {
       planTitle: plan.title,
       costAmount: plan.amount,
       costCurrency: plan.currency,
-      price: this.orders.sellPrice(plan.amount, s),
+      price,
       p12Password: dto.p12Password || this.orders.newP12Password(),
     });
+
+    if (dto.paymentMethod === 'balance') {
+      const ok = await this.wallet.spend(req.user.id, price, order.code);
+      if (ok) await this.orders.fulfill(String(order._id));
+      // Không đủ tiền (hiếm, do race giữa lúc kiểm tra và lúc trừ thật): đơn vẫn ở awaiting_payment,
+      // khách chuyển sang trả bằng VietQR bình thường từ trang chi tiết đơn.
+    }
     return { code: order.code };
   }
 
@@ -390,6 +405,80 @@ export class CertShopController {
     await this.signer.useCertZipBuffer(job, certZip);
     this.signer.start(job, { password: order.p12Password }, user.role === Role.Admin);
     return { jobId: job.id };
+  }
+
+  // ---- ví USDT (MVP: chỉ mạng BEP20) ----
+  @UseGuards(CertShopGuard)
+  @Get('wallet')
+  async walletInfo(@Req() req: Authed) {
+    const [balanceVnd, s] = await Promise.all([this.wallet.balanceVnd(req.user.id), this.settings.get()]);
+    return {
+      balanceVnd,
+      network: 'BSC',
+      networkLabel: 'BEP20',
+      address: s.binanceBepAddress || null,
+      serviceFeeUsdt: s.depositServiceFeeMicro / 1e6,
+      minUsdt: s.depositMinMicro / 1e6,
+      maxUsdt: s.depositMaxMicro / 1e6,
+      usdtVndRate: s.usdtVndRate,
+    };
+  }
+
+  @UseGuards(CertShopGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('wallet/deposits')
+  async createDeposit(@Req() req: Authed, @Body() dto: CreateDepositDto) {
+    const d = await this.wallet.createDeposit(req.user.id, Math.round(dto.requestedAmount * 1e6));
+    return this.depositView(d);
+  }
+
+  @UseGuards(CertShopGuard)
+  @Get('wallet/deposits')
+  async myDeposits(@Req() req: Authed) {
+    return { deposits: (await this.wallet.history(req.user.id)).map((d) => this.depositView(d)) };
+  }
+
+  @UseGuards(CertShopGuard)
+  @Get('wallet/deposits/:id')
+  async depositDetail(@Req() req: Authed, @Param('id') id: string) {
+    const d = await this.wallet.get(req.user.id, id);
+    if (!d) throw new NotFoundException('Không tìm thấy lượt nạp');
+    return this.depositView(d);
+  }
+
+  @UseGuards(CertShopGuard)
+  @HttpCode(200)
+  @Post('wallet/deposits/:id/cancel')
+  async cancelDeposit(@Req() req: Authed, @Param('id') id: string) {
+    await this.wallet.cancel(req.user.id, id);
+    return { ok: true };
+  }
+
+  private depositView(d: {
+    _id: unknown;
+    network: string;
+    address: string;
+    requestedAmountMicro: number;
+    serviceFeeMicro: number;
+    expectedAmountMicro: number;
+    creditAmountMicro: number;
+    status: string;
+    expiresAt: Date;
+    creditedVnd?: number;
+  }) {
+    return {
+      id: String(d._id),
+      network: d.network,
+      networkLabel: d.network === 'BSC' ? 'BEP20' : d.network,
+      address: d.address,
+      requestedAmount: (d.requestedAmountMicro / 1e6).toFixed(6),
+      serviceFee: (d.serviceFeeMicro / 1e6).toFixed(6),
+      expectedAmount: (d.expectedAmountMicro / 1e6).toFixed(6),
+      creditAmount: (d.creditAmountMicro / 1e6).toFixed(6),
+      status: d.status,
+      expiresAt: d.expiresAt,
+      creditedVnd: d.creditedVnd,
+    };
   }
 
   // ---- webhook nhà cung cấp ----

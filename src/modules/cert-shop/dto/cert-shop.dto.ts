@@ -55,6 +55,14 @@ export class CreateOrderDto {
   @IsOptional()
   @Matches(/^[A-Za-z0-9]{1,32}$/, { message: 'Mật khẩu chứng chỉ chỉ gồm chữ và số, tối đa 32 ký tự' })
   p12Password?: string;
+
+  /** 'balance' = trả ngay bằng số dư ví, không qua VietQR. Mặc định vietqr. */
+  @IsOptional() @IsIn(['vietqr', 'balance']) paymentMethod?: 'vietqr' | 'balance';
+}
+
+export class CreateDepositDto {
+  /** USDT, tối đa 6 chữ số thập phân — BE tự nhân 1e6 và validate min/max theo cấu hình. */
+  @IsNumber({ maxDecimalPlaces: 6 }) @Min(0.000001) requestedAmount: number;
 }
 
 export class UpdateCertSettingsDto {
@@ -75,6 +83,14 @@ export class UpdateCertSettingsDto {
   @IsOptional() @IsString() @MaxLength(300) chungchiApiKey?: string;
   @IsOptional() @IsString() @MaxLength(300) webhookSecret?: string;
   @IsOptional() @IsString() @MaxLength(300) web2mToken?: string;
+
+  @IsOptional() @IsString() @MaxLength(300) binanceApiKey?: string;
+  @IsOptional() @IsString() @MaxLength(300) binanceApiSecret?: string;
+  @IsOptional() @IsString() @MaxLength(100) binanceBepAddress?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) depositServiceFeeMicro?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) depositMinMicro?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) depositMaxMicro?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) usdtVndRate?: number;
 }
 
 export class CheckCertDto {
