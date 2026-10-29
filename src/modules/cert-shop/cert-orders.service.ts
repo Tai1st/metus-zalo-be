@@ -97,27 +97,13 @@ export class CertOrdersService {
         }
       }
 
-      // Chụp số dư nhà cung cấp TRƯỚC khi gọi tạo đơn — nếu createOrder() lỗi mơ hồ (timeout), so
-      // sánh với số dư sau đó để biết họ đã thực sự trừ tiền (= đã tạo đơn thật) hay chưa, thay vì
-      // chỉ đoán mò. Best-effort: nếu chính API balance cũng lỗi thì bỏ qua, không chặn luồng chính.
-      const balanceBefore = await this.provider.balance().catch(() => null);
-
       order.providerAttempts += 1;
-      let po: ProviderOrder;
-      try {
-        po = await this.provider.createOrder({
-          plan_id: order.planId,
-          udid: order.udid,
-          device: order.device,
-          p12_password: order.p12Password,
-        });
-      } catch (e) {
-        if (await this.autoRecoverAfterFailedCreate(order, balanceBefore)) {
-          await order.save();
-          return order;
-        }
-        throw e;
-      }
+      const po = await this.provider.createOrder({
+        plan_id: order.planId,
+        udid: order.udid,
+        device: order.device,
+        p12_password: order.p12Password,
+      });
       order.providerOrderCode = po.order_code;
       this.apply(order, po);
     } catch (e) {
@@ -151,43 +137,6 @@ export class CertOrdersService {
     return history
       .filter((o) => String(o.plan_id) === String(order.planId) && (!o.created_at || new Date(o.created_at) >= createdAt))
       .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0];
-  }
-
-  /**
-   * Gọi ngay sau khi createOrder() lỗi mơ hồ (lần đầu, chưa cần đợi admin bấm "Gửi lại"): so sánh
-   * số dư nhà cung cấp trước/sau để biết họ đã thực sự trừ tiền chưa.
-   * - Số dư không đổi → chắc chắn CHƯA tạo đơn, an toàn, không cần làm gì thêm (để catch ngoài xử lý bình thường).
-   * - Số dư giảm → ĐÃ tạo đơn thật dù mình không nhận được response, lập tức tự dò UDID để gắn luôn, không đợi admin.
-   */
-  private async autoRecoverAfterFailedCreate(
-    order: CertOrderDocument,
-    balanceBefore: { wallet: number; currency: string } | null,
-  ): Promise<boolean> {
-    if (!balanceBefore) return false; // không có mốc để so sánh, không kết luận được gì
-    const balanceAfter = await this.provider.balance().catch(() => null);
-    if (!balanceAfter || balanceAfter.wallet >= balanceBefore.wallet) {
-      this.log.warn(
-        `Đơn ${order.code}: tạo đơn lỗi nhưng số dư NCC không đổi (${balanceBefore.wallet} ${balanceBefore.currency}) → có vẻ CHƯA tạo đơn thật`,
-      );
-      return false;
-    }
-
-    this.log.warn(
-      `Đơn ${order.code}: số dư NCC giảm sau lỗi tạo đơn (${balanceBefore.wallet} → ${balanceAfter.wallet} ${balanceAfter.currency}) — ĐÃ tạo đơn thật, tự dò UDID để gắn ngay`,
-    );
-    const found = await this.findExistingByUdid(order);
-    if (!found || found === 'check-failed') {
-      this.log.error(
-        `Đơn ${order.code}: số dư NCC đã giảm nhưng KHÔNG dò được đơn tương ứng qua UDID — cần admin tự kiểm tra, không tự gửi lại`,
-      );
-      order.status = CertOrderStatus.Paid;
-      order.error = 'Nhà cung cấp đã trừ ví (số dư giảm) nhưng không tự tìm được đơn tương ứng — cần admin tự kiểm tra, KHÔNG gửi lại';
-      return true; // đã set trạng thái/lỗi phù hợp, không để catch ngoài ghi đè thành "Lỗi không xác định"
-    }
-    order.providerOrderCode = found.order_code;
-    this.apply(order, found);
-    this.log.log(`Đơn ${order.code}: tự khôi phục thành công sau lỗi mơ hồ, gắn với đơn NCC ${found.order_code}`);
-    return true;
   }
 
   /** Đồng bộ trạng thái đơn từ nhà cung cấp (webhook + polling dự phòng). */
