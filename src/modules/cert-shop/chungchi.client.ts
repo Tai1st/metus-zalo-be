@@ -149,7 +149,7 @@ export class ChungchiClient {
    */
   registerWebhook(url: string) {
     return this.call<{ url: string; secret: string }>('/api/v1/webhook', {
-      method: 'PUT',
+      method: 'POST',
       body: JSON.stringify({ url }),
     });
   }
