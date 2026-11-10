@@ -577,8 +577,12 @@ export class CertShopController {
         // Mật khẩu .p12 chỉ lộ khi cert đã sẵn sàng.
         p12Password: o.status === CertOrderStatus.Completed ? o.p12Password : undefined,
         payment:
-          s && o.paymentMethod !== 'usdt' && o.status === CertOrderStatus.AwaitingPayment
+          s && o.paymentMethod === 'vietqr' && o.status === CertOrderStatus.AwaitingPayment
             ? this.orders.payment(o, s)
+            : undefined,
+        paypalPayment:
+          s && o.paymentMethod === 'paypal' && o.status === CertOrderStatus.AwaitingPayment
+            ? this.orders.paypalPayment(o, s)
             : undefined,
         usdtPayment,
       }),

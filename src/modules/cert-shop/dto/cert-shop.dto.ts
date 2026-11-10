@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsEmail,
   IsIn,
   IsInt,
   IsNumber,
@@ -57,8 +58,8 @@ export class CreateOrderDto {
   @Matches(/^[A-Za-z0-9]{1,32}$/, { message: 'Mật khẩu chứng chỉ chỉ gồm chữ và số, tối đa 32 ký tự' })
   p12Password?: string;
 
-  /** 'balance' = trả ngay bằng số dư ví; 'usdt' = chuyển USDT trực tiếp cho đơn này. Mặc định vietqr. */
-  @IsOptional() @IsIn(['vietqr', 'balance', 'usdt']) paymentMethod?: 'vietqr' | 'balance' | 'usdt';
+  /** 'balance' = trả bằng số dư ví; 'usdt' = chuyển USDT trực tiếp; 'paypal' = chuyển PayPal thủ công. Mặc định vietqr. */
+  @IsOptional() @IsIn(['vietqr', 'balance', 'usdt', 'paypal']) paymentMethod?: 'vietqr' | 'balance' | 'usdt' | 'paypal';
 }
 
 export class CreateDepositDto {
@@ -108,6 +109,7 @@ export class UpdateCertSettingsDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) depositMinMicro?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) depositMaxMicro?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) usdtVndRate?: number;
+  @IsOptional() @IsEmail() @MaxLength(200) paypalEmail?: string;
 }
 
 export class CheckCertDto {

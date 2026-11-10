@@ -62,6 +62,9 @@ export class CertSetting {
   @Prop() depositMaxMicro?: number;
   /** Tỷ giá quy đổi 1 USDT ra VND khi cộng ví — admin tự cập nhật định kỳ, không tra API ngoài. */
   @Prop() usdtVndRate?: number;
+
+  /** Thanh toán PayPal thủ công: khách tự chuyển, admin xác nhận tay (không gọi API PayPal). */
+  @Prop() paypalEmail?: string;
 }
 
 export type CertSettingDocument = HydratedDocument<CertSetting>;

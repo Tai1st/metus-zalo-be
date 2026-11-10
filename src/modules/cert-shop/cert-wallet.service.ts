@@ -73,20 +73,28 @@ export class CertWalletService {
    * Cùng công thức/cơ chế chống trùng như createDeposit(), chỉ khác requestedAmountMicro lấy từ giá
    * đơn (quy đổi theo tỷ giá hiện tại) thay vì khách tự nhập. Phí dịch vụ áp như nạp ví, không miễn.
    * Gọi lại khi lượt trước hết hạn sẽ tự cấp một lượt mới (không cần endpoint "tạo lại" riêng).
+   * Nếu khách đổi sang mạng khác trong lúc lượt cũ còn hạn: hủy lượt cũ, cấp lượt mới cho mạng vừa chọn.
    */
   async orderPayment(
     order: { _id: unknown; code: string; price: number; userId: string },
     networkKey: string,
   ): Promise<CertDepositDocument> {
+    const s = await this.settings.get();
+    const net = this.resolveNetwork(s, networkKey);
+
     const existing = await this.depositModel.findOne({
       orderCode: order.code,
       status: CertDepositStatus.Pending,
       expiresAt: { $gt: new Date() },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (existing.network === net.binanceNetwork) return existing;
+      await this.depositModel.updateOne(
+        { _id: existing._id, status: CertDepositStatus.Pending },
+        { status: CertDepositStatus.Cancelled },
+      );
+    }
 
-    const s = await this.settings.get();
-    const net = this.resolveNetwork(s, networkKey);
     const requestedAmountMicro = Math.round((order.price / s.usdtVndRate) * 1e6);
 
     return this.reserveDeposit({

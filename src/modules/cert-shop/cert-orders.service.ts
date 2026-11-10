@@ -57,6 +57,16 @@ export class CertOrdersService {
   }
 
   /**
+   * Thông tin thanh toán PayPal thủ công: khách tự chuyển tới email này, admin xác nhận tay bằng nút
+   * "Đã nhận tiền" sẵn có (không gọi API PayPal nào). Quy đổi USD qua usdtVndRate (coi USDT ~ USD) rồi
+   * cộng 10% để bù phí PayPal, làm tròn 2 chữ số thập phân.
+   */
+  paypalPayment(order: { price: number; code: string }, s: ShopSettings) {
+    const amountUsd = Math.round(((order.price / s.usdtVndRate) * 1.1 + Number.EPSILON) * 100) / 100;
+    return { email: s.paypalEmail, amountUsd, note: order.code };
+  }
+
+  /**
    * Đã nhận tiền → gửi đơn sang nhà cung cấp. Idempotent: chuyển trạng thái nguyên tử
    * để không gọi nhà cung cấp (trừ ví) hai lần.
    */

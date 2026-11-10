@@ -42,6 +42,7 @@ export interface ShopSettings {
   depositMinMicro: number;
   depositMaxMicro: number;
   usdtVndRate: number;
+  paypalEmail: string;
 }
 
 const CACHE_MS = 15_000;
@@ -123,6 +124,7 @@ export class CertSettingsService {
       depositMinMicro: d?.depositMinMicro ?? Number(env('DEPOSIT_MIN_MICRO', 5_000_000)),
       depositMaxMicro: d?.depositMaxMicro ?? Number(env('DEPOSIT_MAX_MICRO', 1_000_000_000)),
       usdtVndRate: d?.usdtVndRate ?? Number(env('USDT_VND_RATE', 25400)),
+      paypalEmail: d?.paypalEmail || env('PAYPAL_EMAIL', 'kienladykillah@gmail.com'),
     };
     this.cache = { at: Date.now(), value };
     return value;
@@ -150,6 +152,7 @@ export class CertSettingsService {
       depositMinMicro: s.depositMinMicro,
       depositMaxMicro: s.depositMaxMicro,
       usdtVndRate: s.usdtVndRate,
+      paypalEmail: s.paypalEmail,
     };
   }
 
@@ -194,6 +197,7 @@ export class CertSettingsService {
       'depositMinMicro',
       'depositMaxMicro',
       'usdtVndRate',
+      'paypalEmail',
     ] as const;
     for (const k of plain) if (dto[k] !== undefined) set[k] = dto[k];
     // Lưu nguyên mảng (thay toàn bộ): FE gửi lại cả bảng đã sửa mỗi lần lưu, đơn giản hơn patch từng dòng.
