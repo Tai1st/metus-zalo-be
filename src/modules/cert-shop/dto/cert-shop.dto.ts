@@ -62,6 +62,10 @@ export class CreateOrderDto {
   @IsOptional() @IsIn(['vietqr', 'balance', 'usdt', 'paypal']) paymentMethod?: 'vietqr' | 'balance' | 'usdt' | 'paypal';
 }
 
+export class ChangePaymentMethodDto {
+  @IsIn(['vietqr', 'balance', 'usdt', 'paypal']) paymentMethod: 'vietqr' | 'balance' | 'usdt' | 'paypal';
+}
+
 export class CreateDepositDto {
   /** USDT, tối đa 6 chữ số thập phân — BE tự nhân 1e6 và validate min/max theo cấu hình. */
   @IsNumber({ maxDecimalPlaces: 6 }) @Min(0.000001) requestedAmount: number;

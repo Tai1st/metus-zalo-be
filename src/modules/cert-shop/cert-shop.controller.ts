@@ -33,7 +33,7 @@ import { CertSettingsService, ShopSettings } from './cert-settings.service';
 import { CertShopGuard, OptionalAuth, ShopUser } from './cert-shop.guard';
 import { CertWalletService } from './cert-wallet.service';
 import { ChungchiClient } from './chungchi.client';
-import { CheckCertDto, CreateDepositDto, CreateOrderDto, UsdtOrderPaymentDto } from './dto/cert-shop.dto';
+import { ChangePaymentMethodDto, CheckCertDto, CreateDepositDto, CreateOrderDto, UsdtOrderPaymentDto } from './dto/cert-shop.dto';
 import { CertEnroll, CertEnrollDocument } from './schemas/cert-enroll.schema';
 import {
   CertOrder,
@@ -165,6 +165,37 @@ export class CertShopController {
       // khách chuyển sang trả bằng VietQR bình thường từ trang chi tiết đơn.
     }
     return { code: order.code };
+  }
+
+  /** Đổi phương thức thanh toán của đơn đang chờ — chỉ cho phép khi chưa nhận tiền ở phương thức cũ. */
+  @UseGuards(CertShopGuard)
+  @HttpCode(200)
+  @Post('orders/:code/payment-method')
+  async changePaymentMethod(@Req() req: Authed, @Param('code') code: string, @Body() dto: ChangePaymentMethodDto) {
+    const order = await this.owned(req.user, code);
+    if (order.status !== CertOrderStatus.AwaitingPayment) {
+      throw new ConflictException('Đơn không ở trạng thái chờ thanh toán');
+    }
+    if (order.paymentMethod === dto.paymentMethod) {
+      return this.view(order, true, await this.settings.get(), await this.usdtPaymentView(order));
+    }
+
+    if (dto.paymentMethod === 'balance' && (await this.wallet.balanceVnd(req.user.id)) < order.price) {
+      throw new BadRequestException('Số dư không đủ để thanh toán gói này');
+    }
+
+    order.paymentMethod = dto.paymentMethod;
+    await order.save();
+
+    if (dto.paymentMethod === 'balance') {
+      const ok = await this.wallet.spend(req.user.id, order.price, order.code);
+      if (ok) await this.orders.fulfill(String(order._id));
+      // Không đủ tiền do race giữa lúc kiểm tra và lúc trừ thật: đơn vẫn ở awaiting_payment với
+      // paymentMethod đã đổi, khách thử lại hoặc chọn phương thức khác.
+    }
+
+    const fresh = await this.owned(req.user, code);
+    return this.view(fresh, true, await this.settings.get(), await this.usdtPaymentView(fresh));
   }
 
   @UseGuards(CertShopGuard)
