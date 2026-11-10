@@ -125,6 +125,13 @@ export class CertAdminController {
     return this.binance.usdtNetworks();
   }
 
+  /** Lấy địa chỉ nạp thật của tài khoản cho một mạng — admin điền tự động, không gõ tay. */
+  @Get('binance/deposit-address')
+  depositAddress(@Query('network') network: string) {
+    if (!network?.trim()) throw new BadRequestException('Thiếu mã mạng');
+    return this.binance.depositAddress(network.trim());
+  }
+
   /**
    * Đăng ký (hoặc thay) webhook với chungchi.store: gọi PUT /api/v1/webhook bằng URL webhook của
    * chính site, rồi lưu luôn secret họ trả về — secret chỉ hiện đúng một lần ở response này, không

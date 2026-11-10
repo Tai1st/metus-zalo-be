@@ -92,4 +92,12 @@ export class BinanceClient {
     );
     return all.find((c) => c.coin === 'USDT')?.networkList ?? [];
   }
+
+  /**
+   * Địa chỉ nạp thật của chính tài khoản đang gắn API Key, cho đúng mạng — thay vì admin tự mở app
+   * Binance rồi copy tay (dễ gõ nhầm/dán nhầm). Vẫn chỉ đọc, không có quyền rút/tạo địa chỉ mới.
+   */
+  depositAddress(network: string): Promise<{ address: string; coin: string; tag: string; url: string }> {
+    return this.signedGet('/sapi/v1/capital/deposit/address', { coin: 'USDT', network });
+  }
 }
