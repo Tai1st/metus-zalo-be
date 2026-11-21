@@ -9,7 +9,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Link, LinkDocument } from './schemas/link.schema';
-import { LinkPlansService, periodStart } from './link-plans.service';
+import { FREE_PLAN_CODE, LinkPlansService, periodStart } from './link-plans.service';
 import { LinkDomainsService } from './link-domains.service';
 import { CreateLinkDto } from './dto/create-link.dto';
 import { UpdateLinkDto } from './dto/update-link.dto';
@@ -55,20 +55,29 @@ export class LinksService {
     const used = await this.usedSince(user.id, periodStart(plan.period));
     const plansInfo = { code: plan.code, name: plan.name, expiresAt };
     if (user.role === Role.Admin) {
-      return { plan: plansInfo, period: plan.period, limit: null, used, remaining: null };
+      return { plan: plansInfo, period: plan.period, limit: null, used, remaining: null, disabled: false };
     }
+    // Gói free đã bị tắt và người dùng không có gói trả phí còn hạn: không còn hạn mức nào.
+    const disabled = plan.code === FREE_PLAN_CODE && !plan.isActive;
     return {
       plan: plansInfo,
       period: plan.period,
-      limit: plan.limit,
+      limit: disabled ? 0 : plan.limit,
       used,
-      remaining: Math.max(plan.limit - used, 0),
+      remaining: disabled ? 0 : Math.max(plan.limit - used, 0),
+      disabled,
     };
   }
 
   async create(user: AuthUser, dto: CreateLinkDto) {
     if (user.role !== Role.Admin) {
       const { plan } = await this.plans.planFor(user.id);
+      if (plan.code === FREE_PLAN_CODE && !plan.isActive) {
+        throw new HttpException(
+          'Gói miễn phí hiện đã tắt. Hãy mua một gói để tạo link.',
+          HttpStatus.FORBIDDEN,
+        );
+      }
       const used = await this.usedSince(user.id, periodStart(plan.period));
       if (used >= plan.limit) {
         throw new HttpException(

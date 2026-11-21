@@ -86,9 +86,6 @@ export class LinkPlansService implements OnModuleInit {
   }
 
   async update(code: string, dto: UpdateLinkPlanDto) {
-    if (code === FREE_PLAN_CODE && dto.isActive === false) {
-      throw new BadRequestException('Không thể tắt gói free');
-    }
     if (dto.prices && hasDuplicateMonths(dto.prices)) {
       throw new BadRequestException('Mỗi thời hạn chỉ được có một mức giá');
     }
@@ -112,6 +109,7 @@ export class LinkPlansService implements OnModuleInit {
     }
     const free = await this.plans.findOne({ code: FREE_PLAN_CODE });
     if (!free) throw new NotFoundException('Thiếu gói free');
+    // Gói free có thể bị admin tắt: người chưa có gói trả phí còn hạn thì không được tạo link mới.
     return { plan: free, expiresAt: null as Date | null };
   }
 
