@@ -1,16 +1,17 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/public.decorator';
+import { LinkAdmin, LinkAuthGuard } from './link-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { Role } from '../../common/enums/role.enum';
 import { ConfirmLinkOrderDto, CreateLinkOrderDto } from './dto/link-order.dto';
 import { LinkOrdersService } from './link-orders.service';
 
 /** Đơn mua gói link. Người dùng tạo/xem/hủy đơn của mình; admin xác nhận đã nhận tiền. */
 @ApiTags('link-orders')
 @ApiBearerAuth()
-@Roles(Role.Admin, Role.User)
+@Public()
+@UseGuards(LinkAuthGuard)
 @Controller('link-orders')
 export class LinkOrdersController {
   constructor(private readonly orders: LinkOrdersService) {}
@@ -42,7 +43,7 @@ export class LinkOrdersController {
   }
 
   /** Admin xác nhận đã nhận tiền -> kích hoạt gói cho người mua. */
-  @Roles(Role.Admin)
+  @LinkAdmin()
   @Post(':code/confirm')
   confirm(
     @CurrentUser() user: AuthUser,

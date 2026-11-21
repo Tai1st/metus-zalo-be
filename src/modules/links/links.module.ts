@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from '../users/users.module';
 import { CertShopModule } from '../cert-shop/cert-shop.module';
@@ -20,11 +22,22 @@ import { LinkPlansController } from './link-plans.controller';
 import { LinkOrdersController } from './link-orders.controller';
 import { LinkDomainsController } from './link-domains.controller';
 import { LinksInternalController } from './links-internal.controller';
+import { LinkAuthController } from './link-auth.controller';
+import { LinkAuthGuard } from './link-auth.guard';
 
 @Module({
   imports: [
     UsersModule,
     CertShopModule,
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.getOrThrow<string>('JWT_SECRET'),
+        signOptions: {
+          expiresIn: config.get<string>('JWT_EXPIRES_IN', '7d') as never,
+        },
+      }),
+    }),
     MongooseModule.forFeature([
       { name: Link.name, schema: LinkSchema },
       { name: LinkPlan.name, schema: LinkPlanSchema },
@@ -34,6 +47,7 @@ import { LinksInternalController } from './links-internal.controller';
     ]),
   ],
   controllers: [
+    LinkAuthController,
     LinksController,
     LinkPlansController,
     LinkOrdersController,
@@ -46,6 +60,7 @@ import { LinksInternalController } from './links-internal.controller';
     LinkOrdersService,
     LinkDomainsService,
     LinkPaymentWatcherService,
+    LinkAuthGuard,
   ],
 })
 export class LinksModule {}

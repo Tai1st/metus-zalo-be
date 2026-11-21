@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/public.decorator';
+import { LinkAdmin, LinkAuthGuard } from './link-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { Role } from '../../common/enums/role.enum';
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import {
   AddCustomDomainDto,
@@ -14,12 +14,13 @@ import { LinkDomainsService } from './link-domains.service';
 
 @ApiTags('link-domains')
 @ApiBearerAuth()
+@Public()
+@UseGuards(LinkAuthGuard)
 @Controller('link-domains')
 export class LinkDomainsController {
   constructor(private readonly domains: LinkDomainsService) {}
 
   /** Domain người dùng được chọn khi tạo link (theo gói) + domain riêng đã xác minh. */
-  @Roles(Role.Admin, Role.User)
   @Get('available')
   async available(
     @CurrentUser() user: AuthUser,
@@ -33,7 +34,6 @@ export class LinkDomainsController {
 
   // ---- Domain riêng của người dùng ----
 
-  @Roles(Role.Admin, Role.User)
   @Get('mine')
   async mine(@CurrentUser() user: AuthUser): Promise<Record<string, unknown>[]> {
     return (await this.domains.listMine(user)).map((d) => ({
@@ -42,7 +42,6 @@ export class LinkDomainsController {
     }));
   }
 
-  @Roles(Role.Admin, Role.User)
   @Post('mine')
   addMine(
     @CurrentUser() user: AuthUser,
@@ -52,7 +51,6 @@ export class LinkDomainsController {
   }
 
   /** Kiểm tra bản ghi TXT rồi kích hoạt domain. */
-  @Roles(Role.Admin, Role.User)
   @Post('mine/:id/verify')
   async verify(
     @CurrentUser() user: AuthUser,
@@ -61,7 +59,6 @@ export class LinkDomainsController {
     return (await this.domains.verify(user, id)).toJSON();
   }
 
-  @Roles(Role.Admin, Role.User)
   @Delete('mine/:id')
   removeMine(
     @CurrentUser() user: AuthUser,
@@ -72,19 +69,19 @@ export class LinkDomainsController {
 
   // ---- Kho domain hệ thống (admin) ----
 
-  @Roles(Role.Admin)
+  @LinkAdmin()
   @Get('system')
   async listSystem() {
     return (await this.domains.listSystem()).map((d) => d.toJSON());
   }
 
-  @Roles(Role.Admin)
+  @LinkAdmin()
   @Post('system')
   async createSystem(@Body() dto: CreateSystemDomainDto) {
     return (await this.domains.createSystem(dto)).toJSON();
   }
 
-  @Roles(Role.Admin)
+  @LinkAdmin()
   @Patch('system/:id')
   async updateSystem(
     @Param('id', ParseObjectIdPipe) id: string,
@@ -94,7 +91,7 @@ export class LinkDomainsController {
   }
 
   /** Tắt domain hệ thống (không xóa hẳn để giữ lịch sử). */
-  @Roles(Role.Admin)
+  @LinkAdmin()
   @Delete('system/:id')
   async disableSystem(@Param('id', ParseObjectIdPipe) id: string) {
     return (await this.domains.disableSystem(id)).toJSON();

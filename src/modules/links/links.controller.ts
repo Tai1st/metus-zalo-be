@@ -1,17 +1,9 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/public.decorator';
+import { LinkAdmin, LinkAuthGuard } from './link-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { Role } from '../../common/enums/role.enum';
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import { CreateLinkDto } from './dto/create-link.dto';
 import { LinksService } from './links.service';
@@ -23,7 +15,8 @@ import { LinksService } from './links.service';
  */
 @ApiTags('links')
 @ApiBearerAuth()
-@Roles(Role.Admin, Role.User)
+@Public()
+@UseGuards(LinkAuthGuard)
 @Controller('links')
 export class LinksController {
   constructor(private readonly links: LinksService) {}
