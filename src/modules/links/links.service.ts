@@ -151,6 +151,17 @@ export class LinksService {
     return docs.map((d) => d.toJSON());
   }
 
+  /** Số link đang hoạt động và đã lưu trữ (hiện ở thanh bên). Admin đếm tất cả; người dùng thường đếm link của mình. */
+  async counts(user: AuthUser) {
+    const base: Record<string, unknown> = { deletedAt: null };
+    if (user.role !== Role.Admin) base.ownerId = user.id;
+    const [active, archived] = await Promise.all([
+      this.model.countDocuments({ ...base, archivedAt: null }),
+      this.model.countDocuments({ ...base, archivedAt: { $ne: null } }),
+    ]);
+    return { active, archived };
+  }
+
   /** Đổi tiêu đề và/hoặc lưu trữ/khôi phục. Admin sửa được mọi link; người dùng thường chỉ link của mình. */
   async update(user: AuthUser, id: string, dto: UpdateLinkDto) {
     const doc = await this.model.findOne({ _id: id, deletedAt: null });

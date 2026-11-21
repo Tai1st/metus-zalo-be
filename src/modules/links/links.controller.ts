@@ -37,6 +37,12 @@ export class LinksController {
     return this.links.list(user, limit ? Number(limit) || 200 : 200, status === 'archived' ? 'archived' : 'active');
   }
 
+  /** Số link đang hoạt động / đã lưu trữ. */
+  @Get('counts')
+  counts(@CurrentUser() user: AuthUser) {
+    return this.links.counts(user);
+  }
+
   /** Kiểm tra một link TikTok (không lưu): loại link, URL đích, deeplink sinh ra. */
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('inspect')
