@@ -19,7 +19,7 @@ import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Role } from '../../common/enums/role.enum';
 import { UsersService } from '../users/users.service';
-import { LinkLoginDto, LinkRegisterDto } from './dto/link-auth.dto';
+import { LinkChangePasswordDto, LinkLoginDto, LinkRegisterDto } from './dto/link-auth.dto';
 import { LinkAuthGuard } from './link-auth.guard';
 
 // Dùng khi username không tồn tại để thời gian phản hồi không lộ tài khoản nào có thật.
@@ -85,6 +85,21 @@ export class LinkAuthController {
   async me(@CurrentUser() user: AuthUser): Promise<View | null> {
     const u = await this.users.findById(user.id);
     return u ? this.view(u) : null;
+  }
+
+  /** Đổi mật khẩu: bắt buộc nhập đúng mật khẩu hiện tại (chống người khác dùng phiên đang mở). */
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @UseGuards(LinkAuthGuard)
+  @HttpCode(200)
+  @Post('change-password')
+  async changePassword(@CurrentUser() user: AuthUser, @Body() dto: LinkChangePasswordDto) {
+    const u = await this.users.findByIdWithPassword(user.id);
+    if (!u) throw new UnauthorizedException('Phiên đăng nhập không hợp lệ');
+    const ok = await bcrypt.compare(dto.currentPassword, u.passwordHash);
+    if (!ok) throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
+    await this.users.setPassword(user.id, dto.newPassword);
+    return { ok: true };
   }
 
   private view(u: Person): View {

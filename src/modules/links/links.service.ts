@@ -12,6 +12,7 @@ import { Link, LinkDocument } from './schemas/link.schema';
 import { LinkPlansService, periodStart } from './link-plans.service';
 import { LinkDomainsService } from './link-domains.service';
 import { CreateLinkDto } from './dto/create-link.dto';
+import { UpdateLinkDto } from './dto/update-link.dto';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '../../common/enums/role.enum';
 import {
@@ -137,14 +138,65 @@ export class LinksService {
   }
 
   /** Admin xem tất cả; người dùng thường chỉ xem link của mình. */
-  async list(user: AuthUser, limit = 200) {
-    const filter: Record<string, unknown> = { deletedAt: null };
+  async list(user: AuthUser, limit = 200, status: 'active' | 'archived' = 'active') {
+    const filter: Record<string, unknown> = {
+      deletedAt: null,
+      archivedAt: status === 'archived' ? { $ne: null } : null,
+    };
     if (user.role !== Role.Admin) filter.ownerId = user.id;
     const docs = await this.model
       .find(filter)
       .sort({ createdAt: -1 })
       .limit(Math.min(Math.max(limit, 1), 500));
     return docs.map((d) => d.toJSON());
+  }
+
+  /** Đổi tiêu đề và/hoặc lưu trữ/khôi phục. Admin sửa được mọi link; người dùng thường chỉ link của mình. */
+  async update(user: AuthUser, id: string, dto: UpdateLinkDto) {
+    const doc = await this.model.findOne({ _id: id, deletedAt: null });
+    if (!doc) throw new NotFoundException('Không tìm thấy link');
+    if (user.role !== Role.Admin && doc.ownerId !== user.id) {
+      throw new ForbiddenException('Không có quyền sửa link này');
+    }
+    if (dto.title !== undefined) {
+      const title = dto.title.trim();
+      if (!title) throw new BadRequestException('Tiêu đề không được để trống');
+      doc.title = title;
+    }
+    if (dto.archived !== undefined) doc.archivedAt = dto.archived ? new Date() : null;
+    await doc.save();
+    return doc.toJSON();
+  }
+
+  /** Phân tích một link TikTok mà không lưu: cho biết loại, URL đích và deeplink sinh ra. */
+  async inspect(url: string) {
+    const input = url.trim();
+    if (!isTikTokUrl(input)) {
+      throw new BadRequestException('Chỉ nhận link https của tiktok.com (vt/vm/www)');
+    }
+    let webUrl: string;
+    try {
+      webUrl = await resolveShort(input);
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Không đọc được link');
+    }
+    if (!isTikTokUrl(webUrl)) throw new BadRequestException('Đích không thuộc TikTok');
+    const t = await parseTarget(webUrl);
+    if (!t) {
+      throw new BadRequestException(
+        'Chỉ hỗ trợ link sản phẩm (/view/product/…) hoặc chiến dịch (/caravel/campaign…)',
+      );
+    }
+    return {
+      kind: t.kind,
+      webUrl,
+      androidUrl: t.appLink,
+      iosUrl: buildOnelink(t.appLink),
+      title: t.title,
+      image: t.image,
+      productId: t.productId ?? '',
+      campaignId: t.campaignId ?? '',
+    };
   }
 
   /** Admin xóa được mọi link; người dùng thường chỉ xóa link của mình. */
@@ -161,7 +213,7 @@ export class LinksService {
 
   /** Dữ liệu công khai cho trang /s/<code>; `count` tăng bộ đếm lượt bấm. */
   async resolve(code: string, count: boolean, host?: string): Promise<PublicLink> {
-    const doc = await this.model.findOne({ code, deletedAt: null });
+    const doc = await this.model.findOne({ code, deletedAt: null, archivedAt: null });
     if (!doc) throw new NotFoundException('Link không tồn tại');
     // Link gắn với một domain thì chỉ mở được trên đúng domain đó (bỏ cổng :port khi so sánh).
     const reqHost = host?.toLowerCase().split(':')[0];

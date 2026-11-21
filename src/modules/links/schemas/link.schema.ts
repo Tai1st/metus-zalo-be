@@ -43,6 +43,10 @@ export class Link {
   @Prop({ default: 0 })
   clicks: number;
 
+  /** Lưu trữ: link ngừng hoạt động nhưng vẫn giữ trong danh sách lưu trữ và có thể khôi phục. */
+  @Prop({ type: Date, default: null })
+  archivedAt: Date | null;
+
   /** Xóa mềm: link đã xóa ngừng hoạt động nhưng vẫn tính vào hạn mức trong ngày. */
   @Prop({ type: Date, default: null })
   deletedAt: Date | null;
