@@ -65,5 +65,7 @@ import { CertQuickAppService } from './cert-quick-app.service';
     CertShopGuard,
     CertWalletService,
   ],
+  // Cho module link rút gọn dùng chung tài khoản nhận tiền + token web2m (một nguồn cấu hình).
+  exports: [CertSettingsService],
 })
 export class CertShopModule {}
