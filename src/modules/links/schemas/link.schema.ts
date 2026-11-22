@@ -48,6 +48,26 @@ export class Link {
   @Prop({ default: '' })
   image: string;
 
+  /** Hash bcrypt của mật khẩu bảo vệ (rỗng = không có). Không bao giờ trả ra API (xem mongoose-json). */
+  @Prop({ default: '' })
+  passwordHash: string;
+
+  /** Chuyển hướng theo quốc gia / tỉnh thành (link thường). */
+  @Prop({ type: [Object], default: [] })
+  geoRules: { country: string; region?: string; url: string }[];
+
+  /** Chuyển hướng theo hệ điều hành thiết bị. */
+  @Prop({ type: [Object], default: [] })
+  deviceRules: { device: string; url: string }[];
+
+  /** Chuyển hướng theo ngôn ngữ trình duyệt. */
+  @Prop({ type: [Object], default: [] })
+  langRules: { lang: string; url: string }[];
+
+  /** Tham số (UTM…) tự gắn vào URL đích khi chuyển hướng. */
+  @Prop({ type: [Object], default: [] })
+  params: { key: string; value: string }[];
+
   /** Người tạo (id user). */
   @Prop({ required: true })
   ownerId: string;
@@ -66,5 +86,8 @@ export class Link {
 
 export type LinkDocument = HydratedDocument<Link>;
 export const LinkSchema = SchemaFactory.createForClass(Link);
+LinkSchema.virtual('hasPassword').get(function (this: { passwordHash?: string }) {
+  return !!this.passwordHash;
+});
 LinkSchema.index({ createdAt: -1 });
 LinkSchema.index({ ownerId: 1, createdAt: -1 });

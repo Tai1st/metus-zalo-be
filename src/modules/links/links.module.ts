@@ -12,6 +12,9 @@ import {
 } from './schemas/link-membership.schema';
 import { LinkOrder, LinkOrderSchema } from './schemas/link-order.schema';
 import { LinkDomain, LinkDomainSchema } from './schemas/link-domain.schema';
+import { LinkImage, LinkImageSchema } from './schemas/link-image.schema';
+import { LinkImagesService } from './link-images.service';
+import { LinkImagesController } from './link-images.controller';
 import { LinksService } from './links.service';
 import { LinkPlansService } from './link-plans.service';
 import { LinkOrdersService } from './link-orders.service';
@@ -45,6 +48,7 @@ import { LinkAuthGuard } from './link-auth.guard';
       { name: LinkMembership.name, schema: LinkMembershipSchema },
       { name: LinkOrder.name, schema: LinkOrderSchema },
       { name: LinkDomain.name, schema: LinkDomainSchema },
+      { name: LinkImage.name, schema: LinkImageSchema },
     ]),
   ],
   controllers: [
@@ -55,9 +59,11 @@ import { LinkAuthGuard } from './link-auth.guard';
     LinkOrdersController,
     LinkDomainsController,
     LinksInternalController,
+    LinkImagesController,
   ],
   providers: [
     LinksService,
+    LinkImagesService,
     LinkPlansService,
     LinkOrdersService,
     LinkDomainsService,

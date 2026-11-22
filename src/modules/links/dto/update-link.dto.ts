@@ -1,6 +1,7 @@
+import { LinkExtrasDto } from './link-extras.dto';
 import { IsBoolean, IsIn, IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
 
-export class UpdateLinkDto {
+export class UpdateLinkDto extends LinkExtrasDto {
   /** Đổi tiêu đề hiển thị khi chia sẻ. */
   @IsOptional()
   @IsString()

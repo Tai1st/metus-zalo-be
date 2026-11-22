@@ -1,6 +1,7 @@
-import { IsIn, IsOptional, IsString, IsUrl, Matches, MaxLength } from 'class-validator';
+import { LinkExtrasDto } from './link-extras.dto';
+import { IsBoolean, IsIn, IsOptional, IsString, IsUrl, Matches, MaxLength } from 'class-validator';
 
-export class CreateLinkDto {
+export class CreateLinkDto extends LinkExtrasDto {
   /**
    * Loại rút gọn: `deeplink` (mặc định) = link TikTok Shop mở thẳng ứng dụng; `normal` = link thường bất kỳ (http/https).
    */
@@ -18,6 +19,14 @@ export class CreateLinkDto {
   @IsString()
   @MaxLength(253)
   domain?: string;
+
+  /**
+   * Link thường: nhập link TikTok Shop thì tạo deeplink trước rồi lấy deeplink đó làm đích (tính hạn mức deeplink).
+   * Mặc định tắt: link TikTok được rút gọn y như link thường khác.
+   */
+  @IsOptional()
+  @IsBoolean()
+  autoDeeplink?: boolean;
 
   /** Link thường: tên tùy chỉnh thay cho mã ngẫu nhiên (3–32 ký tự: chữ, số, gạch ngang, gạch dưới). */
   @IsOptional()
