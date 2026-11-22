@@ -171,6 +171,12 @@ export class LinkDomainsService {
     return { ok: true };
   }
 
+  /** Mọi tên miền đang có trong hệ thống (hệ thống + riêng), dùng để chặn rút gọn link trỏ lại chính nó. */
+  async allHosts(): Promise<string[]> {
+    const rows = await this.model.find({}, { host: 1 }).lean();
+    return rows.map((r) => r.host);
+  }
+
   // ---------- Dùng khi tạo link ----------
 
   /**

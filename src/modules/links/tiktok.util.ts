@@ -17,6 +17,62 @@ export type ParsedTarget = {
   campaignId?: string;
 };
 
+/** Địa chỉ nội bộ / không công khai: không cho làm đích của link rút gọn thường (tránh lợi dụng truy cập mạng nội bộ). */
+function isPrivateHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') || h.endsWith('.lan')) return true;
+  // IPv6: loopback, unique-local (fc00::/7), link-local (fe80::/10), IPv4-mapped
+  if (h.includes(':')) return h === '::1' || h === '::' || /^f[cd]/.test(h) || /^fe[89ab]/.test(h) || h.startsWith('::ffff:');
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    return (
+      a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224
+    );
+  }
+  // Số thập phân/hex/octal kiểu "2130706433", "0x7f000001" cũng là địa chỉ IP
+  if (/^(0x[0-9a-f]+|\d+)$/i.test(h)) return true;
+  return !h.includes('.'); // tên không có dấu chấm (vd "intranet") không phải tên miền công khai
+}
+
+/**
+ * Chuẩn hóa và kiểm tra đích của link rút gọn thường: chỉ http/https, không có user:pass@, không là địa chỉ nội bộ,
+ * không trỏ về chính tên miền rút gọn của hệ thống (selfHosts). Ném Error với thông báo tiếng Việt.
+ */
+export function validateNormalUrl(input: string, selfHosts: string[]): string {
+  let x: URL;
+  try {
+    x = new URL(input.trim());
+  } catch {
+    throw new Error('Đường dẫn không hợp lệ');
+  }
+  if (x.protocol !== 'http:' && x.protocol !== 'https:') throw new Error('Chỉ nhận đường dẫn http hoặc https');
+  if (x.username || x.password) throw new Error('Đường dẫn không được chứa tên đăng nhập/mật khẩu');
+  if (x.href.length > 2048) throw new Error('Đường dẫn quá dài (tối đa 2048 ký tự)');
+  if (isPrivateHost(x.hostname)) throw new Error('Không thể rút gọn địa chỉ nội bộ hoặc không công khai');
+  const host = x.hostname.toLowerCase();
+  if (selfHosts.some((h) => h && (host === h || host.endsWith('.' + h)))) {
+    throw new Error('Không thể rút gọn link đã được rút gọn bởi hệ thống này');
+  }
+  return x.href;
+}
+
+/** Ảnh xem trước: chỉ https, không có user:pass@, không là địa chỉ nội bộ (ảnh do trình duyệt/trình quét tải, không phải server). */
+export function validateImageUrl(input: string): string {
+  let x: URL;
+  try {
+    x = new URL(input.trim());
+  } catch {
+    throw new Error('Đường dẫn ảnh không hợp lệ');
+  }
+  if (x.protocol !== 'https:') throw new Error('Ảnh xem trước phải là đường dẫn https');
+  if (x.username || x.password) throw new Error('Đường dẫn ảnh không được chứa tên đăng nhập/mật khẩu');
+  if (x.href.length > 2048) throw new Error('Đường dẫn ảnh quá dài');
+  if (isPrivateHost(x.hostname)) throw new Error('Đường dẫn ảnh không được là địa chỉ nội bộ');
+  return x.href;
+}
+
 export function isTikTokUrl(u: string): boolean {
   try {
     const x = new URL(u);

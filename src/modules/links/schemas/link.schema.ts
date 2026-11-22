@@ -9,15 +9,15 @@ export class Link {
   @Prop({ required: true, unique: true })
   code: string;
 
-  @Prop({ required: true, enum: ['product', 'campaign'] })
-  kind: 'product' | 'campaign';
+  @Prop({ required: true, enum: ['product', 'campaign', 'url'] })
+  kind: 'product' | 'campaign' | 'url';
 
   /** URL web đầy đủ của TikTok (đã giải mã từ vt/vm). */
   @Prop({ required: true })
   webUrl: string;
 
-  /** Deeplink snssdk1180://… để mở app. */
-  @Prop({ required: true })
+  /** Deeplink snssdk1180://… để mở app (rỗng với link thường). */
+  @Prop({ default: '' })
   appLink: string;
 
   @Prop({ default: '' })
@@ -32,6 +32,18 @@ export class Link {
 
   @Prop({ default: '', trim: true })
   title: string;
+
+  /** Link thường: `direct` = chuyển hướng ngay (HTTP 307), `interstitial` = trang trung gian có thẻ xem trước. */
+  @Prop({ default: 'interstitial', enum: ['direct', 'interstitial'] })
+  redirectType: 'direct' | 'interstitial';
+
+  /** Ghi chú nội bộ để phân biệt link (không hiển thị cho người bấm). */
+  @Prop({ default: '', trim: true })
+  note: string;
+
+  /** Mô tả hiển thị trong thẻ xem trước khi chia sẻ (link thường). */
+  @Prop({ default: '', trim: true })
+  description: string;
 
   @Prop({ default: '' })
   image: string;

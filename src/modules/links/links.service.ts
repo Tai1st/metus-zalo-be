@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -21,13 +22,17 @@ import {
   newCode,
   parseTarget,
   resolveShort,
+  validateImageUrl,
+  validateNormalUrl,
 } from './tiktok.util';
 
 /** Dữ liệu công khai đủ để dựng trang /s/<code>. */
 export type PublicLink = {
   code: string;
-  kind: 'product' | 'campaign';
+  kind: 'product' | 'campaign' | 'url';
   title: string;
+  description: string;
+  redirectType: 'direct' | 'interstitial';
   image: string;
   webUrl: string;
   androidUrl: string;
@@ -46,7 +51,8 @@ export class LinksService {
 
   /** Số link đã tạo từ đầu chu kỳ; tính cả link xóa mềm để không lách hạn mức bằng xóa rồi tạo lại. */
   private usedSince(ownerId: string, since: Date): Promise<number> {
-    return this.model.countDocuments({ ownerId, createdAt: { $gte: since } });
+    // Link thường (kind 'url') không giới hạn nên không tính vào hạn mức; chỉ deeplink TikTok tính.
+    return this.model.countDocuments({ ownerId, kind: { $ne: 'url' }, createdAt: { $gte: since } });
   }
 
   /** Hạn mức hiện tại theo gói link của người dùng; admin không giới hạn. */
@@ -70,18 +76,19 @@ export class LinksService {
   }
 
   async create(user: AuthUser, dto: CreateLinkDto) {
-    if (user.role !== Role.Admin) {
+    // Link thường không giới hạn: chỉ deeplink TikTok bị kiểm tra gói và hạn mức.
+    if (dto.mode !== 'normal' && user.role !== Role.Admin) {
       const { plan } = await this.plans.planFor(user.id);
       if (plan.code === FREE_PLAN_CODE && !plan.isActive) {
         throw new HttpException(
-          'Gói miễn phí hiện đã tắt. Hãy mua một gói để tạo link.',
+          'Gói miễn phí hiện đã tắt. Hãy mua một gói để tạo deeplink TikTok.',
           HttpStatus.FORBIDDEN,
         );
       }
       const used = await this.usedSince(user.id, periodStart(plan.period));
       if (used >= plan.limit) {
         throw new HttpException(
-          `Gói ${plan.name} đã hết ${plan.limit} link/${PERIOD_VI[plan.period]}. Nâng cấp gói hoặc thử lại ở chu kỳ sau`,
+          `Gói ${plan.name} đã hết ${plan.limit} deeplink/${PERIOD_VI[plan.period]}. Link thường vẫn tạo không giới hạn; muốn thêm deeplink hãy nâng cấp gói hoặc thử lại ở chu kỳ sau`,
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
@@ -89,6 +96,8 @@ export class LinksService {
 
     // Chọn và kiểm tra domain theo gói trước khi làm việc nặng (gọi TikTok).
     const domain = await this.domains.pickForNewLink(user, dto.domain);
+
+    if (dto.mode === 'normal') return this.createNormal(user, dto, domain);
 
     const input = dto.url.trim();
     if (!isTikTokUrl(input)) {
@@ -123,23 +132,77 @@ export class LinksService {
         ? 'Ưu đãi trên TikTok Shop'
         : 'Sản phẩm TikTok Shop');
 
-    for (let i = 0; i < 5; i++) {
+    return this.saveWithCode({
+      kind: target.kind,
+      webUrl,
+      appLink: target.appLink,
+      productId: target.productId ?? '',
+      campaignId: target.campaignId ?? '',
+      title,
+      description: '',
+      redirectType: 'interstitial' as const,
+      note: '',
+      image: target.image,
+      ownerId: user.id,
+      domain,
+    });
+  }
+
+  /**
+   * Rút gọn link thường: đích là đường dẫn http/https bất kỳ. Server KHÔNG tải trang đích (tránh bị lợi dụng
+   * truy cập địa chỉ nội bộ); chỉ kiểm tra cú pháp và chặn đích nguy hiểm.
+   */
+  private async createNormal(user: AuthUser, dto: CreateLinkDto, domain: string) {
+    const selfHosts = [...(await this.domains.allHosts()), 'link.metus.vn'];
+    let href: string;
+    try {
+      href = validateNormalUrl(dto.url, selfHosts);
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Đường dẫn không hợp lệ');
+    }
+    let image = '';
+    if (dto.image?.trim()) {
       try {
-        const doc = await this.model.create({
-          code: newCode(),
-          kind: target.kind,
-          webUrl,
-          appLink: target.appLink,
-          productId: target.productId ?? '',
-          campaignId: target.campaignId ?? '',
-          title,
-          image: target.image,
-          ownerId: user.id,
-          domain,
-        });
+        image = validateImageUrl(dto.image);
+      } catch (e) {
+        throw new BadRequestException(e instanceof Error ? e.message : 'Đường dẫn ảnh không hợp lệ');
+      }
+    }
+    return this.saveWithCode({
+      kind: 'url' as const,
+      webUrl: href,
+      appLink: '',
+      productId: '',
+      campaignId: '',
+      title: dto.title?.trim() || new URL(href).hostname,
+      description: dto.description?.trim() ?? '',
+      redirectType: dto.redirectType ?? 'interstitial',
+      note: dto.note?.trim() ?? '',
+      image,
+      ownerId: user.id,
+      domain,
+    }, dto.alias?.trim().toLowerCase());
+  }
+
+  /** Lưu link: có `alias` thì dùng đúng tên đó (trùng thì báo lỗi), không thì mã ngẫu nhiên (trùng rất hiếm -> thử lại). */
+  private async saveWithCode(fields: Omit<Link, 'code' | 'clicks' | 'archivedAt' | 'deletedAt'>, alias?: string) {
+    if (alias) {
+      try {
+        const doc = await this.model.create({ ...fields, code: alias });
         return doc.toJSON();
       } catch (e) {
-        // 11000 = trùng code (rất hiếm) -> thử mã khác
+        if ((e as { code?: number }).code === 11000) {
+          throw new ConflictException('Tên tùy chỉnh này đã được sử dụng, hãy chọn tên khác');
+        }
+        throw e;
+      }
+    }
+    for (let i = 0; i < 5; i++) {
+      try {
+        const doc = await this.model.create({ ...fields, code: newCode() });
+        return doc.toJSON();
+      } catch (e) {
+        // 11000 = trùng code -> thử mã khác
         if ((e as { code?: number }).code !== 11000) throw e;
       }
     }
@@ -182,6 +245,21 @@ export class LinksService {
       const title = dto.title.trim();
       if (!title) throw new BadRequestException('Tiêu đề không được để trống');
       doc.title = title;
+    }
+    if (doc.kind === 'url') {
+      if (dto.description !== undefined) doc.description = dto.description.trim();
+      if (dto.redirectType !== undefined) doc.redirectType = dto.redirectType;
+      if (dto.note !== undefined) doc.note = dto.note.trim();
+      if (dto.image !== undefined) {
+        if (!dto.image.trim()) doc.image = '';
+        else {
+          try {
+            doc.image = validateImageUrl(dto.image);
+          } catch (e) {
+            throw new BadRequestException(e instanceof Error ? e.message : 'Đường dẫn ảnh không hợp lệ');
+          }
+        }
+      }
     }
     if (dto.archived !== undefined) doc.archivedAt = dto.archived ? new Date() : null;
     await doc.save();
@@ -245,10 +323,12 @@ export class LinksService {
       code: doc.code,
       kind: doc.kind,
       title: doc.title,
+      description: doc.description ?? '',
+      redirectType: doc.redirectType ?? 'interstitial',
       image: doc.image,
       webUrl: doc.webUrl,
       androidUrl: doc.appLink,
-      iosUrl: buildOnelink(doc.appLink),
+      iosUrl: doc.appLink ? buildOnelink(doc.appLink) : '',
     };
   }
 }

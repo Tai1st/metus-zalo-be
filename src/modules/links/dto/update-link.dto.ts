@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
 
 export class UpdateLinkDto {
   /** Đổi tiêu đề hiển thị khi chia sẻ. */
@@ -7,6 +7,29 @@ export class UpdateLinkDto {
   @MinLength(1)
   @MaxLength(200)
   title?: string;
+
+  /** Link thường: kiểu chuyển hướng. */
+  @IsOptional()
+  @IsIn(['direct', 'interstitial'])
+  redirectType?: 'direct' | 'interstitial';
+
+  /** Link thường: ghi chú nội bộ. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string;
+
+  /** Link thường: mô tả trong thẻ xem trước (chuỗi rỗng = xóa). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  description?: string;
+
+  /** Link thường: ảnh xem trước, https (chuỗi rỗng = xóa). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  image?: string;
 
   /** true = lưu trữ (ngừng hoạt động), false = khôi phục. */
   @IsOptional()
