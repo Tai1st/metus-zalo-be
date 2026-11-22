@@ -55,6 +55,10 @@ export class LinkPlan {
   @Prop({ default: true })
   isActive: boolean;
 
+  /** Gói được gắn nhãn "Khuyên chọn" trên bảng giá. */
+  @Prop({ default: false })
+  isRecommended: boolean;
+
   @Prop({ default: 0 })
   sortOrder: number;
 }

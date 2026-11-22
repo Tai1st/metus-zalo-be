@@ -67,6 +67,11 @@ export class CreateLinkPlanDto {
   @IsBoolean()
   isActive?: boolean;
 
+  /** Gắn nhãn "Khuyên chọn" trên bảng giá. */
+  @IsOptional()
+  @IsBoolean()
+  isRecommended?: boolean;
+
   @IsOptional()
   @IsInt()
   sortOrder?: number;
