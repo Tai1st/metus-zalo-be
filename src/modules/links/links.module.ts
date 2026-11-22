@@ -19,6 +19,7 @@ import { LinksService } from './links.service';
 import { LinkPlansService } from './link-plans.service';
 import { LinkOrdersService } from './link-orders.service';
 import { LinkDomainsService } from './link-domains.service';
+import { CloudflareService } from './cloudflare.service';
 import { LinkPaymentWatcherService } from './link-payment-watcher.service';
 import { LinksController } from './links.controller';
 import { LinkPlansController } from './link-plans.controller';
@@ -67,6 +68,7 @@ import { LinkAuthGuard } from './link-auth.guard';
     LinkPlansService,
     LinkOrdersService,
     LinkDomainsService,
+    CloudflareService,
     LinkPaymentWatcherService,
     LinkAuthGuard,
   ],

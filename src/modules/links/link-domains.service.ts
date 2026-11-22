@@ -20,6 +20,7 @@ import {
   UpdateSystemDomainDto,
 } from './dto/link-domain.dto';
 import { LinkPlansService } from './link-plans.service';
+import { CloudflareService } from './cloudflare.service';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '../../common/enums/role.enum';
 
@@ -44,6 +45,7 @@ export class LinkDomainsService {
     @InjectModel(LinkDomain.name) private readonly model: Model<LinkDomainDocument>,
     private readonly plans: LinkPlansService,
     private readonly config: ConfigService,
+    private readonly cf: CloudflareService,
   ) {}
 
   // ---------- Kho domain hệ thống (admin) ----------
@@ -121,22 +123,39 @@ export class LinkDomainsService {
     if (count >= limit) {
       throw new ForbiddenException(`Gói hiện tại chỉ cho thêm tối đa ${limit} tên miền riêng`);
     }
+    // Có Cloudflare: tạo zone, người dùng đổi nameserver; không có: xác minh bằng bản ghi TXT.
+    const zone = this.cf.enabled ? await this.cf.createZone(host) : null;
+    if (zone) {
+      try {
+        await this.cf.setupZone(zone.id, host, this.pointTo() || 'link.metus.vn');
+      } catch (e) {
+        await this.cf.deleteZone(zone.id);
+        throw e;
+      }
+    }
     const doc = await this.model.create({
       host,
       kind: 'custom',
       ownerId: user.id,
       status: 'pending',
       verifyToken: randomBytes(16).toString('hex'),
+      cfZoneId: zone?.id ?? '',
+      nameServers: zone?.name_servers ?? [],
     });
     return { ...doc.toJSON(), dns: this.dnsInstructions(doc) };
   }
 
   /** Hướng dẫn DNS: bản ghi TXT chứng minh sở hữu, và (nếu cấu hình) đích trỏ về hệ thống. */
-  dnsInstructions(d: Pick<LinkDomain, 'host' | 'verifyToken'>) {
+  dnsInstructions(d: Pick<LinkDomain, 'host' | 'verifyToken' | 'cfZoneId' | 'nameServers'>) {
+    if (d.cfZoneId) return { nameServers: d.nameServers };
     return {
       txt: { name: `${VERIFY_PREFIX}.${d.host}`, value: d.verifyToken },
-      pointTo: this.config.get<string>('LINKS_CNAME_TARGET', '') || null,
+      pointTo: this.pointTo() || null,
     };
+  }
+
+  private pointTo(): string {
+    return this.config.get<string>('LINKS_CNAME_TARGET', '');
   }
 
   async verify(user: AuthUser, id: string) {
@@ -146,6 +165,20 @@ export class LinkDomainsService {
       throw new ForbiddenException('Không có quyền với tên miền này');
     }
     if (doc.status === 'active') return doc;
+
+    if (doc.cfZoneId) {
+      await this.cf.recheck(doc.cfZoneId);
+      const zone = await this.cf.getZone(doc.cfZoneId);
+      if (zone.status !== 'active') {
+        throw new BadRequestException(
+          'Chưa nhận được nameserver mới, hãy đổi nameserver tại nơi đăng ký tên miền rồi thử lại sau ít phút (có thể mất tới vài giờ)',
+        );
+      }
+      await this.cf.setupZone(doc.cfZoneId, doc.host, this.pointTo() || 'link.metus.vn');
+      doc.status = 'active';
+      doc.verifiedAt = new Date();
+      return doc.save();
+    }
 
     let records: string[][] = [];
     try {
@@ -167,6 +200,7 @@ export class LinkDomainsService {
     if (user.role !== Role.Admin && doc.ownerId !== user.id) {
       throw new ForbiddenException('Không có quyền xóa tên miền này');
     }
+    if (doc.cfZoneId) await this.cf.deleteZone(doc.cfZoneId);
     await doc.deleteOne();
     return { ok: true };
   }

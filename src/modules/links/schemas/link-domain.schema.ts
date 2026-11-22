@@ -33,6 +33,14 @@ export class LinkDomain {
   @Prop({ type: Date, default: null })
   verifiedAt: Date | null;
 
+  /** Zone Cloudflare của tên miền (khi người dùng đổi nameserver về Cloudflare của hệ thống). */
+  @Prop({ default: '' })
+  cfZoneId: string;
+
+  /** Cặp nameserver Cloudflare gán cho zone, người dùng phải đổi nameserver tên miền về đây. */
+  @Prop({ type: [String], default: [] })
+  nameServers: string[];
+
   /** Domain hệ thống dùng làm mặc định khi người dùng không chọn. */
   @Prop({ default: false })
   isDefault: boolean;
