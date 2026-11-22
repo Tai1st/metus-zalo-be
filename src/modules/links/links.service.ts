@@ -43,6 +43,8 @@ export type PublicLink = {
   androidUrl: string;
   iosUrl: string;
   hasPassword: boolean;
+  /** Link thường có đích là deeplink của hệ thống: dữ liệu App Links của deeplink để trang trung gian khai báo thẻ al:*. */
+  appLinks?: { androidUrl: string; iosUrl: string; webUrl: string };
   /** Dấu vân tay của mật khẩu hiện tại: đổi mật khẩu thì đổi, để vô hiệu cookie mở khóa cũ. */
   lockId: string;
   geoRules: { country: string; region?: string; url: string }[];
@@ -424,6 +426,22 @@ export class LinksService {
       throw new NotFoundException('Link không tồn tại');
     }
     if (count) await this.model.updateOne({ _id: doc._id }, { $inc: { clicks: 1 } });
+    // Link thường có đích là một deeplink của chính hệ thống (tạo tự động từ link TikTok): kèm dữ liệu App Links của deeplink
+    // để trang trung gian khai báo thẻ al:* ngay trên đường dẫn được chia sẻ. Facebook chỉ mở thẳng app không cảnh báo
+    // khi chính đường dẫn đó có thẻ này; nhảy sang trang deeplink bằng JavaScript thì không đủ.
+    let appLinks: PublicLink['appLinks'];
+    if (doc.kind === 'url') {
+      const m = /^https:\/\/([^/?#]+)\/s\/([A-Za-z0-9_-]+)\/?$/.exec(doc.webUrl);
+      if (m) {
+        const hosts = [...(await this.domains.allHosts()), this.config.get<string>('LINKS_DEFAULT_HOST', 'link.metus.vn')];
+        const target = hosts.includes(m[1].toLowerCase())
+          ? await this.model.findOne({ code: m[2], deletedAt: null, archivedAt: null, kind: { $in: ['product', 'campaign'] } })
+          : null;
+        if (target) {
+          appLinks = { androidUrl: target.appLink, iosUrl: buildOnelink(target.appLink), webUrl: target.webUrl };
+        }
+      }
+    }
     return {
       code: doc.code,
       kind: doc.kind,
@@ -440,6 +458,7 @@ export class LinksService {
       deviceRules: doc.deviceRules ?? [],
       langRules: doc.langRules ?? [],
       params: doc.params ?? [],
+      ...(appLinks && { appLinks }),
     };
   }
 
