@@ -19,6 +19,7 @@ import { LinkDomainsService } from './link-domains.service';
 import { LinkPaymentWatcherService } from './link-payment-watcher.service';
 import { LinksController } from './links.controller';
 import { LinkPlansController } from './link-plans.controller';
+import { LinkPlansPublicController } from './link-plans-public.controller';
 import { LinkOrdersController } from './link-orders.controller';
 import { LinkDomainsController } from './link-domains.controller';
 import { LinksInternalController } from './links-internal.controller';
@@ -50,6 +51,7 @@ import { LinkAuthGuard } from './link-auth.guard';
     LinkAuthController,
     LinksController,
     LinkPlansController,
+    LinkPlansPublicController,
     LinkOrdersController,
     LinkDomainsController,
     LinksInternalController,
