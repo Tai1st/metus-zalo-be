@@ -26,6 +26,28 @@ import { UsersService } from '../users/users.service';
 import { addMonths, hasDuplicateMonths } from '../../common/pricing';
 
 export const FREE_PLAN_CODE = 'free';
+
+type PricePoint = { months: number; price: number };
+
+/**
+ * Giá 3 và 12 tháng tính từ giá 1 tháng và % giảm so với mua lẻ, làm tròn đến nghìn đồng.
+ * Không có giá 1 tháng thì trả nguyên danh sách giá đã có (gói không bán hoặc cấu hình thủ công theo kỳ khác).
+ */
+export function derivePrices(
+  prices: PricePoint[] | undefined,
+  discount3: number,
+  discount12: number,
+): PricePoint[] {
+  const base = prices?.find((p) => p.months === 1)?.price;
+  if (base === undefined) return prices ?? [];
+  const at = (months: number, discount: number) =>
+    Math.round((base * months * (1 - discount / 100)) / 1000) * 1000;
+  return [
+    { months: 1, price: base },
+    { months: 3, price: at(3, discount3) },
+    { months: 12, price: at(12, discount12) },
+  ];
+}
 const VN_OFFSET = 7 * 3600_000;
 
 /** Đầu chu kỳ hiện tại theo giờ Việt Nam (UTC+7), trả về Date (UTC). */
@@ -53,6 +75,7 @@ export class LinkPlansService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    await this.recomputePrices();
     if (!(await this.plans.exists({ code: FREE_PLAN_CODE }))) {
       await this.plans.create({
         code: FREE_PLAN_CODE,
@@ -64,6 +87,27 @@ export class LinkPlansService implements OnModuleInit {
         sortOrder: 0,
       });
       this.log.log('Đã tạo gói link mặc định "free" (5 link/ngày)');
+    }
+  }
+
+  /**
+   * Đồng bộ giá 3 và 12 tháng của mọi gói theo giá 1 tháng và % giảm (chạy khi khởi động; không đổi gì nếu đã đúng).
+   * Nhờ vậy dữ liệu cũ nhập tay từng kỳ được sửa về đúng quy tắc "chỉ nhập giá 1 tháng".
+   */
+  private async recomputePrices() {
+    for (const p of await this.plans.find()) {
+      const next = derivePrices(
+        (p.prices ?? []).map((x) => ({ months: x.months, price: x.price })),
+        p.discount3 ?? 17,
+        p.discount12 ?? 24,
+      );
+      const same =
+        next.length === (p.prices ?? []).length &&
+        next.every((n, i) => p.prices[i]?.months === n.months && p.prices[i]?.price === n.price);
+      if (!same) {
+        await this.plans.updateOne({ _id: p._id }, { prices: next });
+        this.log.log(`Đã tính lại giá gói "${p.code}" theo giá 1 tháng`);
+      }
     }
   }
 
@@ -82,14 +126,26 @@ export class LinkPlansService implements OnModuleInit {
     if (dto.prices && hasDuplicateMonths(dto.prices)) {
       throw new BadRequestException('Mỗi thời hạn chỉ được có một mức giá');
     }
-    return this.plans.create(dto);
+    return this.plans.create({
+      ...dto,
+      prices: derivePrices(dto.prices, dto.discount3 ?? 17, dto.discount12 ?? 24),
+    });
   }
 
   async update(code: string, dto: UpdateLinkPlanDto) {
     if (dto.prices && hasDuplicateMonths(dto.prices)) {
       throw new BadRequestException('Mỗi thời hạn chỉ được có một mức giá');
     }
-    const doc = await this.plans.findOneAndUpdate({ code }, dto, { new: true });
+    const cur = await this.plans.findOne({ code });
+    if (!cur) throw new NotFoundException('Không tìm thấy gói');
+    const patch: Record<string, unknown> = { ...dto };
+    // Đổi giá 1 tháng hoặc % giảm thì tính lại giá 3 và 12 tháng.
+    if (dto.prices !== undefined || dto.discount3 !== undefined || dto.discount12 !== undefined) {
+      const source =
+        dto.prices ?? (cur.prices ?? []).map((x) => ({ months: x.months, price: x.price }));
+      patch.prices = derivePrices(source, dto.discount3 ?? cur.discount3 ?? 17, dto.discount12 ?? cur.discount12 ?? 24);
+    }
+    const doc = await this.plans.findOneAndUpdate({ code }, patch, { new: true });
     if (!doc) throw new NotFoundException('Không tìm thấy gói');
     return doc;
   }

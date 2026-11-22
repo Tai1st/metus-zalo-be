@@ -34,9 +34,17 @@ export class LinkPlan {
   @Prop({ required: true, enum: ['day', 'week', 'month'], default: 'day' })
   period: LinkPeriod;
 
-  /** Giá theo thời hạn mua (1 / 3 / 12 tháng…). Gói free không có giá. */
+  /** Giá theo thời hạn mua. Chỉ cần nhập giá 1 tháng; giá 3 và 12 tháng tự tính theo discount3/discount12. Gói free không có giá. */
   @Prop({ type: [LinkPlanPriceSchema], default: [] })
   prices: LinkPlanPrice[];
+
+  /** % giảm khi mua 3 tháng so với mua lẻ 3 lần giá 1 tháng. Giá 3 tháng được hệ thống tự tính. */
+  @Prop({ default: 17, min: 0, max: 90 })
+  discount3: number;
+
+  /** % giảm khi mua 12 tháng (1 năm) so với mua lẻ 12 lần giá 1 tháng. Giá 12 tháng được hệ thống tự tính. */
+  @Prop({ default: 24, min: 0, max: 90 })
+  discount12: number;
 
   @Prop({ default: 'VND' })
   currency: string;

@@ -48,6 +48,20 @@ export class CreateLinkPlanDto {
   @Type(() => PricePointDto)
   prices?: PricePointDto[];
 
+  /** % giảm khi mua 3 tháng (giá 3 tháng được tự tính từ giá 1 tháng). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(90)
+  discount3?: number;
+
+  /** % giảm khi mua 12 tháng (giá 12 tháng được tự tính từ giá 1 tháng). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(90)
+  discount12?: number;
+
   /** Domain hệ thống gói được dùng (host); để trống = tất cả. */
   @IsOptional()
   @IsArray()
