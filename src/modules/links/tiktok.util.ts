@@ -200,6 +200,17 @@ export async function parseTarget(webUrl: string): Promise<ParsedTarget | null> 
 }
 
 const CODE_ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789';
+/**
+ * Tên đã dùng cho trang của ứng dụng web: link thường có dạng `host/<mã>` nên mã không được trùng các tên này.
+ * Giữ đồng bộ với src/lib/reserved.ts của web.
+ */
+const RESERVED_CODES = new Set([
+  'admin', 'analytics', 'api', 'assets', 'bio', 'bulk', 'dashboard', 'domains', 'expired', 'favicon', 'help', 'inspector',
+  'integrations', 'login', 'logout', 'plans', 'pricing', 'privacy', 'qr', 'r', 'register', 'robots', 's', 'settings',
+  'sitemap', 'static', 'support', 'terms', 'www',
+]);
+export const isReservedCode = (code: string) => RESERVED_CODES.has(code.toLowerCase());
+
 export function newCode(): string {
   let s = '';
   for (const v of randomBytes(8)) s += CODE_ALPHABET[v % CODE_ALPHABET.length];

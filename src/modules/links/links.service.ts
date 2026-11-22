@@ -22,6 +22,7 @@ import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '../../common/enums/role.enum';
 import {
   buildOnelink,
+  isReservedCode,
   isTikTokUrl,
   newCode,
   parseTarget,
@@ -225,6 +226,9 @@ export class LinksService {
     }
     const extras = await this.buildExtras(dto);
     const alias = dto.alias?.trim().toLowerCase();
+    if (alias && isReservedCode(alias)) {
+      throw new BadRequestException('Tên này được hệ thống giữ riêng, hãy chọn tên khác');
+    }
     // Kiểm tra tên tùy chỉnh trước khi tạo deeplink để không tạo thừa (lệch hạn mức) khi tên đã bị dùng.
     if (alias && (await this.model.exists({ code: alias }))) {
       throw new ConflictException('Tên tùy chỉnh này đã được sử dụng, hãy chọn tên khác');
@@ -297,7 +301,9 @@ export class LinksService {
     }
     for (let i = 0; i < 5; i++) {
       try {
-        const doc = await this.model.create({ ...fields, code: newCode() });
+        const code = newCode();
+        if (isReservedCode(code)) continue; // hiếm: mã ngẫu nhiên trùng tên trang của ứng dụng
+        const doc = await this.model.create({ ...fields, code });
         return doc.toJSON();
       } catch (e) {
         // 11000 = trùng code -> thử mã khác
