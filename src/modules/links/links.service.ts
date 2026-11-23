@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcryptjs';
 import { createHash } from 'node:crypto';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Link, LinkDocument } from './schemas/link.schema';
 import { FREE_PLAN_CODE, LinkPlansService, periodStart } from './link-plans.service';
 import { LinkDomainsService } from './link-domains.service';
@@ -326,7 +326,24 @@ export class LinksService {
       .find(filter)
       .sort({ createdAt: -1 })
       .limit(Math.min(Math.max(limit, 1), 500));
-    return docs.map((d) => d.toJSON());
+    const rows = docs.map((d) => d.toJSON());
+    if (user.role !== Role.Admin) return rows;
+
+    // Admin: kèm tên đăng nhập và họ tên của chủ sở hữu để khỏi phải tra mã.
+    const ids = [...new Set(rows.map((r) => r.ownerId).filter(Boolean))].flatMap((id) =>
+      Types.ObjectId.isValid(id) ? [new Types.ObjectId(id)] : [],
+    );
+    const owners = ids.length
+      ? await this.model.db
+          .collection('users')
+          .find({ _id: { $in: ids } }, { projection: { username: 1, fullName: 1 } })
+          .toArray()
+      : [];
+    const byId = new Map(owners.map((o) => [String(o._id), o]));
+    return rows.map((r) => {
+      const o = byId.get(r.ownerId);
+      return { ...r, owner: o ? { username: o.username as string, fullName: (o.fullName as string) ?? '' } : null };
+    });
   }
 
   /** Số link đang hoạt động và đã lưu trữ (hiện ở thanh bên). Admin đếm tất cả; người dùng thường đếm link của mình. */

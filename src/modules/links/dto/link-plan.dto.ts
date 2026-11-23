@@ -34,7 +34,7 @@ export class CreateLinkPlanDto {
   description?: string;
 
   @IsInt()
-  @Min(1)
+  @Min(0)
   limit: number;
 
   @IsIn(['day', 'week', 'month'])

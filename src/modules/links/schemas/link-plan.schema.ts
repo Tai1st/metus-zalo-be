@@ -28,7 +28,7 @@ export class LinkPlan {
   description: string;
 
   /** Số link được tạo trong mỗi chu kỳ. */
-  @Prop({ required: true, min: 1 })
+  @Prop({ required: true, min: 0 })
   limit: number;
 
   @Prop({ required: true, enum: ['day', 'week', 'month'], default: 'day' })
