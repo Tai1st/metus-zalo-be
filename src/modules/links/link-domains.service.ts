@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomBytes } from 'node:crypto';
 import { resolveTxt } from 'node:dns/promises';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import {
   LinkDomain,
   LinkDomainDocument,
@@ -200,6 +200,58 @@ export class LinkDomainsService {
     if (user.role !== Role.Admin && doc.ownerId !== user.id) {
       throw new ForbiddenException('Không có quyền xóa tên miền này');
     }
+    if (doc.cfZoneId) await this.cf.deleteZone(doc.cfZoneId);
+    await doc.deleteOne();
+    return { ok: true };
+  }
+
+  // ---------- Quản lý tên miền riêng của mọi người dùng (admin) ----------
+
+  /** Tất cả tên miền riêng kèm chủ sở hữu và số link đang dùng. */
+  async listCustomAdmin(): Promise<Record<string, unknown>[]> {
+    const rows = await this.model.find({ kind: 'custom' }).sort({ createdAt: -1 });
+    const ownerIds = [...new Set(rows.map((r) => r.ownerId).filter(Boolean))].map((id) => new Types.ObjectId(id));
+    const owners = ownerIds.length
+      ? await this.model.db
+          .collection('users')
+          .find({ _id: { $in: ownerIds } }, { projection: { username: 1, fullName: 1 } })
+          .toArray()
+      : [];
+    const byId = new Map(owners.map((o) => [String(o._id), o]));
+    const links = this.model.db.collection('links');
+    return Promise.all(
+      rows.map(async (r) => {
+        const o = byId.get(r.ownerId);
+        return {
+          ...r.toJSON(),
+          owner: o ? { username: o.username as string, fullName: (o.fullName as string) ?? '' } : null,
+          linkCount: await links.countDocuments({ domain: r.host }),
+        };
+      }),
+    );
+  }
+
+  private async customOrThrow(id: string) {
+    const doc = await this.model.findOne({ _id: id, kind: 'custom' });
+    if (!doc) throw new NotFoundException('Không tìm thấy tên miền');
+    return doc;
+  }
+
+  /** Admin bật/tắt tên miền riêng của người dùng. Chỉ bật lại được tên miền đã xác minh. */
+  async setCustomActive(id: string, isActive: boolean) {
+    const doc = await this.customOrThrow(id);
+    if (isActive) {
+      if (!doc.verifiedAt) throw new BadRequestException('Tên miền chưa xác minh, hãy bấm Xác minh trước');
+      doc.status = 'active';
+    } else {
+      doc.status = 'disabled';
+    }
+    return doc.save();
+  }
+
+  /** Admin xóa tên miền riêng của người dùng (kèm zone Cloudflare nếu có). */
+  async removeCustomAdmin(id: string) {
+    const doc = await this.customOrThrow(id);
     if (doc.cfZoneId) await this.cf.deleteZone(doc.cfZoneId);
     await doc.deleteOne();
     return { ok: true };

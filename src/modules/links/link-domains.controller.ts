@@ -67,6 +67,35 @@ export class LinkDomainsController {
     return this.domains.removeMine(user, id);
   }
 
+  // ---- Tên miền riêng của mọi người dùng (admin) ----
+
+  @LinkAdmin()
+  @Get('custom')
+  listCustom(): Promise<Record<string, unknown>[]> {
+    return this.domains.listCustomAdmin();
+  }
+
+  @LinkAdmin()
+  @Patch('custom/:id')
+  async setCustomActive(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateSystemDomainDto,
+  ) {
+    return (await this.domains.setCustomActive(id, dto.isActive !== false)).toJSON();
+  }
+
+  @LinkAdmin()
+  @Post('custom/:id/verify')
+  async verifyCustom(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string) {
+    return (await this.domains.verify(user, id)).toJSON();
+  }
+
+  @LinkAdmin()
+  @Delete('custom/:id')
+  removeCustom(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.domains.removeCustomAdmin(id);
+  }
+
   // ---- Kho domain hệ thống (admin) ----
 
   @LinkAdmin()
