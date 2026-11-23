@@ -64,6 +64,7 @@ export class UsersService implements OnModuleInit {
     role?: Role;
     allowedZaloIds?: string[];
     ownerId?: string;
+    source?: 'link' | 'cert';
   }) {
     const passwordHash = await bcrypt.hash(input.password, 12);
     return this.model.create({
@@ -74,6 +75,7 @@ export class UsersService implements OnModuleInit {
       role: input.role ?? Role.User,
       allowedZaloIds: input.allowedZaloIds ?? [],
       ownerId: input.ownerId ?? '',
+      source: input.source ?? '',
     });
   }
 
@@ -148,6 +150,31 @@ export class UsersService implements OnModuleInit {
   /** Khách hàng web: người dùng gói Zalo (`user`) và khách của Link / Cert shop (`shop`). */
   listCustomers() {
     return this.model.find({ role: { $in: [Role.User, Role.Shop] } }).sort({ createdAt: -1 });
+  }
+
+  /**
+   * Khách Link / Cert shop thuộc loại nào: lấy từ nơi đăng ký (`source`) và từ dữ liệu đã phát sinh
+   * (link, gói, đơn Link → Link; đơn, ví Cert → Cert) nên tài khoản cũ chưa có `source` vẫn được phân loại.
+   */
+  async shopKinds(userIds: string[]): Promise<Map<string, Set<'link' | 'cert'>>> {
+    const kinds = new Map<string, Set<'link' | 'cert'>>();
+    const add = (id: unknown, k: 'link' | 'cert') => {
+      const key = String(id);
+      if (!kinds.has(key)) kinds.set(key, new Set());
+      kinds.get(key)!.add(k);
+    };
+    if (!userIds.length) return kinds;
+    const col = (n: string) => this.db.collection(n);
+    const [links, mems, lorders, corders, wallets] = await Promise.all([
+      col('links').distinct('ownerId', { ownerId: { $in: userIds } }),
+      col('link_memberships').distinct('userId', { userId: { $in: userIds } }),
+      col('link_orders').distinct('userId', { userId: { $in: userIds } }),
+      col('cert_orders').distinct('userId', { userId: { $in: userIds } }),
+      col('cert_wallets').distinct('userId', { userId: { $in: userIds } }),
+    ]);
+    [...links, ...mems, ...lorders].forEach((id) => add(id, 'link'));
+    [...corders, ...wallets].forEach((id) => add(id, 'cert'));
+    return kinds;
   }
 
   async getCustomer(id: string) {

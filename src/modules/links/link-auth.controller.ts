@@ -57,6 +57,7 @@ export class LinkAuthController {
       password: dto.password,
       fullName: dto.fullName?.trim() || dto.username,
       role: Role.Shop,
+      source: 'link',
     });
     return this.session(user);
   }

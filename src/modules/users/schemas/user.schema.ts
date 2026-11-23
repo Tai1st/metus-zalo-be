@@ -25,6 +25,10 @@ export class User {
   @Prop({ default: true })
   isActive: boolean;
 
+  /** Nơi tài khoản đăng ký (chỉ khách `shop`): 'link' = Link rút gọn, 'cert' = Cert shop; rỗng với tài khoản cũ. */
+  @Prop({ type: String, enum: ['', 'link', 'cert'], default: '' })
+  source: '' | 'link' | 'cert';
+
   /** For Role.Staff: the customer (User) that owns this employee. */
   @Prop({ default: '' })
   ownerId: string;

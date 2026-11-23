@@ -53,6 +53,7 @@ export class CertAuthController {
       password: dto.password,
       fullName: dto.fullName?.trim() || dto.username,
       role: Role.Shop,
+      source: 'cert',
     });
     await this.startSession(res, String(user._id), user.role);
     return this.view(user);

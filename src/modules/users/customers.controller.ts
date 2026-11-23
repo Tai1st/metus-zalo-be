@@ -35,7 +35,15 @@ export class CustomersController {
   @Get()
   async list() {
     const rows = await this.users.listCustomers();
-    return rows.map((r) => r.toJSON());
+    const shopIds = rows.filter((r) => r.role === Role.Shop).map((r) => String(r._id));
+    const kinds = await this.users.shopKinds(shopIds);
+    return rows.map((r) => {
+      const json = r.toJSON() as Record<string, unknown>;
+      if (r.role !== Role.Shop) return json;
+      const set = new Set(kinds.get(String(r._id)));
+      if (r.source) set.add(r.source);
+      return { ...json, shopKinds: [...set] };
+    });
   }
 
   @Get(':id')
