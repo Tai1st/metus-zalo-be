@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -144,13 +145,14 @@ export class UsersService implements OnModuleInit {
   }
 
   /** Khách hàng (role User) — tài khoản mua gói, tách khỏi Staff/Admin. */
+  /** Khách hàng web: người dùng gói Zalo (`user`) và khách của Link / Cert shop (`shop`). */
   listCustomers() {
-    return this.model.find({ role: Role.User }).sort({ createdAt: -1 });
+    return this.model.find({ role: { $in: [Role.User, Role.Shop] } }).sort({ createdAt: -1 });
   }
 
   async getCustomer(id: string) {
     const user = await this.model.findById(id);
-    return user && user.role === Role.User ? user : null;
+    return user && (user.role === Role.User || user.role === Role.Shop) ? user : null;
   }
 
   async setCustomerActive(id: string, isActive: boolean) {
@@ -173,6 +175,10 @@ export class UsersService implements OnModuleInit {
   async deleteCustomerCascade(id: string): Promise<boolean> {
     const customer = await this.getCustomer(id);
     if (!customer) return false;
+    // Khách Link / Cert shop có dữ liệu ở các module khác (link, đơn, ví…) mà thao tác này không dọn; chặn để khỏi để lại dữ liệu mồ côi.
+    if (customer.role === Role.Shop) {
+      throw new BadRequestException('Không xóa được khách Link / Cert shop tại đây, hãy khóa tài khoản thay vì xóa');
+    }
 
     const staff = await this.model.find(
       { role: Role.Staff, ownerId: id },
