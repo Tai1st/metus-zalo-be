@@ -14,6 +14,9 @@ import { LinkOrder, LinkOrderSchema } from './schemas/link-order.schema';
 import { LinkDomain, LinkDomainSchema } from './schemas/link-domain.schema';
 import { LinkImage, LinkImageSchema } from './schemas/link-image.schema';
 import { LinkClick, LinkClickSchema } from './schemas/link-click.schema';
+import { LinkBio, LinkBioSchema } from './schemas/link-bio.schema';
+import { LinkBiosService } from './link-bios.service';
+import { LinkBiosController, LinkBiosInternalController } from './link-bios.controller';
 import { LinkImagesService } from './link-images.service';
 import { LinkImagesController } from './link-images.controller';
 import { LinksService } from './links.service';
@@ -52,6 +55,7 @@ import { LinkAuthGuard } from './link-auth.guard';
       { name: LinkDomain.name, schema: LinkDomainSchema },
       { name: LinkImage.name, schema: LinkImageSchema },
       { name: LinkClick.name, schema: LinkClickSchema },
+      { name: LinkBio.name, schema: LinkBioSchema },
     ]),
   ],
   controllers: [
@@ -61,6 +65,8 @@ import { LinkAuthGuard } from './link-auth.guard';
     LinkPlansPublicController,
     LinkOrdersController,
     LinkDomainsController,
+    LinkBiosController,
+    LinkBiosInternalController,
     LinksInternalController,
     LinkImagesController,
   ],
@@ -71,6 +77,7 @@ import { LinkAuthGuard } from './link-auth.guard';
     LinkOrdersService,
     LinkDomainsService,
     CloudflareService,
+    LinkBiosService,
     LinkPaymentWatcherService,
     LinkAuthGuard,
   ],
