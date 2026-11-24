@@ -15,6 +15,7 @@ import { Model, Types } from 'mongoose';
 import { Link, LinkDocument } from './schemas/link.schema';
 import { FREE_PLAN_CODE, LinkPlansService, periodStart } from './link-plans.service';
 import { LinkDomainsService } from './link-domains.service';
+import { resolveShopee } from './shopee.util';
 import { CreateLinkDto } from './dto/create-link.dto';
 import { UpdateLinkDto } from './dto/update-link.dto';
 import type { LinkExtrasDto } from './dto/link-extras.dto';
@@ -34,7 +35,7 @@ import {
 /** Dữ liệu công khai đủ để dựng trang /s/<code>. */
 export type PublicLink = {
   code: string;
-  kind: 'product' | 'campaign' | 'url';
+  kind: 'product' | 'campaign' | 'url' | 'shopee';
   title: string;
   description: string;
   redirectType: 'direct' | 'interstitial';
@@ -110,9 +111,10 @@ export class LinksService {
   }
 
   /** Số link đã tạo từ đầu chu kỳ; tính cả link xóa mềm để không lách hạn mức bằng xóa rồi tạo lại. */
-  private usedSince(ownerId: string, since: Date): Promise<number> {
-    // Link thường (kind 'url') không giới hạn nên không tính vào hạn mức; chỉ deeplink TikTok tính.
-    return this.model.countDocuments({ ownerId, kind: { $ne: 'url' }, createdAt: { $gte: since } });
+  private usedSince(ownerId: string, since: Date, group: 'tiktok' | 'shopee' = 'tiktok'): Promise<number> {
+    // Link thường (kind 'url') không giới hạn nên không tính vào hạn mức; deeplink TikTok và deeplink Shopee tính riêng.
+    const kind = group === 'shopee' ? 'shopee' : { $in: ['product', 'campaign'] };
+    return this.model.countDocuments({ ownerId, kind, createdAt: { $gte: since } });
   }
 
   /** Hạn mức hiện tại theo gói link của người dùng; admin không giới hạn. */
@@ -120,8 +122,17 @@ export class LinksService {
     const { plan, expiresAt } = await this.plans.planFor(user.id);
     const used = await this.usedSince(user.id, periodStart(plan.period));
     const plansInfo = { code: plan.code, name: plan.name, expiresAt };
+    const shopeeUsed = await this.usedSince(user.id, periodStart(plan.period), 'shopee');
     if (user.role === Role.Admin) {
-      return { plan: plansInfo, period: plan.period, limit: null, used, remaining: null, disabled: false };
+      return {
+        plan: plansInfo,
+        period: plan.period,
+        limit: null,
+        used,
+        remaining: null,
+        disabled: false,
+        shopee: { limit: null, used: shopeeUsed, remaining: null },
+      };
     }
     // Gói free đã bị tắt và người dùng không có gói trả phí còn hạn: không còn hạn mức nào.
     const disabled = plan.code === FREE_PLAN_CODE && !plan.isActive;
@@ -132,12 +143,33 @@ export class LinksService {
       used,
       remaining: disabled ? 0 : Math.max(plan.limit - used, 0),
       disabled,
+      shopee: {
+        limit: disabled ? 0 : (plan.shopeeLimit ?? 0),
+        used: shopeeUsed,
+        remaining: disabled ? 0 : Math.max((plan.shopeeLimit ?? 0) - shopeeUsed, 0),
+      },
     };
   }
 
   async create(user: AuthUser, dto: CreateLinkDto) {
     // Link thường không giới hạn: chỉ deeplink TikTok bị kiểm tra gói và hạn mức.
-    if (dto.mode !== 'normal' && user.role !== Role.Admin) {
+    if (dto.mode === 'shopee' && user.role !== Role.Admin) {
+      const { plan } = await this.plans.planFor(user.id);
+      if (plan.code === FREE_PLAN_CODE && !plan.isActive) {
+        throw new HttpException('Gói miễn phí hiện đã tắt. Hãy mua một gói để tạo deeplink Shopee.', HttpStatus.FORBIDDEN);
+      }
+      const limit = plan.shopeeLimit ?? 0;
+      const used = await this.usedSince(user.id, periodStart(plan.period), 'shopee');
+      if (used >= limit) {
+        throw new HttpException(
+          limit === 0
+            ? `Gói ${plan.name} không có deeplink Shopee. Hãy nâng cấp gói để dùng.`
+            : `Gói ${plan.name} đã hết ${limit} deeplink Shopee/${PERIOD_VI[plan.period]}. Hãy nâng cấp gói hoặc thử lại ở chu kỳ sau`,
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    }
+    if ((dto.mode === undefined || dto.mode === 'deeplink') && user.role !== Role.Admin) {
       const { plan } = await this.plans.planFor(user.id);
       if (plan.code === FREE_PLAN_CODE && !plan.isActive) {
         throw new HttpException(
@@ -159,6 +191,7 @@ export class LinksService {
     const expiresAt = await this.newLinkExpiry(user);
 
     if (dto.mode === 'normal') return this.createNormal(user, dto, domain, expiresAt);
+    if (dto.mode === 'shopee') return this.createShopee(user, dto, domain, expiresAt);
 
     const input = dto.url.trim();
     if (!isTikTokUrl(input)) {
@@ -204,6 +237,31 @@ export class LinksService {
       redirectType: 'interstitial' as const,
       note: '',
       image: target.image,
+      ownerId: user.id,
+      domain,
+      expiresAt,
+    });
+  }
+
+  /** Deeplink Shopee: link Shopee mở thẳng app Shopee (logic riêng, không dùng bộ đọc link của TikTok). */
+  private async createShopee(user: AuthUser, dto: CreateLinkDto, domain: string, expiresAt: Date | null) {
+    let t;
+    try {
+      t = await resolveShopee(dto.url.trim());
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Không đọc được link Shopee');
+    }
+    return this.saveWithCode({
+      kind: 'shopee' as const,
+      webUrl: t.webUrl,
+      appLink: t.appLink,
+      productId: '',
+      campaignId: '',
+      title: dto.title?.trim() || t.title || 'Sản phẩm Shopee',
+      description: '',
+      redirectType: 'interstitial' as const,
+      note: '',
+      image: t.image,
       ownerId: user.id,
       domain,
       expiresAt,
@@ -550,7 +608,8 @@ export class LinksService {
       image: doc.image,
       webUrl: doc.webUrl,
       androidUrl: doc.appLink,
-      iosUrl: doc.appLink ? buildOnelink(doc.appLink) : '',
+      // Deeplink Shopee dùng nguyên địa chỉ app; deeplink TikTok bọc qua onelink cho iOS.
+      iosUrl: doc.kind === 'shopee' ? doc.appLink : doc.appLink ? buildOnelink(doc.appLink) : '',
       hasPassword: !!doc.passwordHash,
       lockId: doc.passwordHash ? createHash('sha256').update(doc.passwordHash).digest('hex').slice(0, 16) : '',
       geoRules: doc.geoRules ?? [],

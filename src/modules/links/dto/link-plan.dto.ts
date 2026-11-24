@@ -77,6 +77,12 @@ export class CreateLinkPlanDto {
   @Max(100)
   maxCustomDomains?: number;
 
+  /** Số deeplink Shopee mỗi chu kỳ; 0 = không có. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  shopeeLimit?: number;
+
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;

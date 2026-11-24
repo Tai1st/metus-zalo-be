@@ -13,6 +13,7 @@ type PublicPlan = {
   prices: { months: number; price: number }[];
   currency: string;
   maxCustomDomains: number;
+  shopeeLimit: number;
   isRecommended: boolean;
 };
 
@@ -39,6 +40,7 @@ export class LinkPlansPublicController {
       prices: (p.prices ?? []).map((x) => ({ months: x.months, price: x.price })),
       currency: p.currency,
       maxCustomDomains: p.maxCustomDomains ?? 0,
+      shopeeLimit: p.shopeeLimit ?? 0,
       isRecommended: !!p.isRecommended,
     }));
   }

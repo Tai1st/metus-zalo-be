@@ -3,11 +3,11 @@ import { IsBoolean, IsIn, IsOptional, IsString, IsUrl, Matches, MaxLength } from
 
 export class CreateLinkDto extends LinkExtrasDto {
   /**
-   * Loại rút gọn: `deeplink` (mặc định) = link TikTok Shop mở thẳng ứng dụng; `normal` = link thường bất kỳ (http/https).
+   * Loại rút gọn: `deeplink` (mặc định) = link TikTok Shop mở thẳng ứng dụng; `normal` = link thường bất kỳ (http/https); `shopee` = link Shopee mở thẳng app Shopee.
    */
   @IsOptional()
-  @IsIn(['deeplink', 'normal'])
-  mode?: 'deeplink' | 'normal';
+  @IsIn(['deeplink', 'normal', 'shopee'])
+  mode?: 'deeplink' | 'normal' | 'shopee';
 
   /** Deeplink: link chia sẻ vt/vm.tiktok.com hoặc link web tiktok.com. Normal: đường dẫn http/https bất kỳ. */
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })

@@ -9,8 +9,8 @@ export class Link {
   @Prop({ required: true, unique: true })
   code: string;
 
-  @Prop({ required: true, enum: ['product', 'campaign', 'url'] })
-  kind: 'product' | 'campaign' | 'url';
+  @Prop({ required: true, enum: ['product', 'campaign', 'url', 'shopee'] })
+  kind: 'product' | 'campaign' | 'url' | 'shopee';
 
   /** URL web đầy đủ của TikTok (đã giải mã từ vt/vm). */
   @Prop({ required: true })

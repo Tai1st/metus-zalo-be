@@ -59,6 +59,10 @@ export class LinkPlan {
   @Prop({ default: 0, min: 0 })
   maxCustomDomains: number;
 
+  /** Số deeplink Shopee tạo được mỗi chu kỳ (tính riêng với deeplink TikTok). 0 = gói không có deeplink Shopee. */
+  @Prop({ default: 0, min: 0 })
+  shopeeLimit: number;
+
   /** Gói đang bán; gói tắt vẫn áp dụng cho người đã được gán đến khi hết hạn. */
   @Prop({ default: true })
   isActive: boolean;
