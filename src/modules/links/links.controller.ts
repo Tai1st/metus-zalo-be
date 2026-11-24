@@ -34,7 +34,8 @@ export class LinksController {
     @Query('limit') limit?: string,
     @Query('status') status?: string,
   ): Promise<Record<string, unknown>[]> {
-    return this.links.list(user, limit ? Number(limit) || 200 : 200, status === 'archived' ? 'archived' : 'active');
+    const st = status === 'archived' || status === 'expired' ? status : 'active';
+    return this.links.list(user, limit ? Number(limit) || 200 : 200, st);
   }
 
   /** Thống kê lượt bấm: `days` (1-90, mặc định 30), `code` lọc theo một link. */

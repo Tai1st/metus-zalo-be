@@ -388,13 +388,18 @@ export class LinksService {
   async list(
     user: AuthUser,
     limit = 200,
-    status: 'active' | 'archived' = 'active',
+    status: 'active' | 'archived' | 'expired' = 'active',
   ): Promise<Record<string, unknown>[]> {
     const filter: Record<string, unknown> = {
       deletedAt: null,
       archivedAt: status === 'archived' ? { $ne: null } : null,
     };
     if (user.role !== Role.Admin) filter.ownerId = user.id;
+    if (status === 'expired') {
+      // Link của gói Free đã quá hạn dùng. Admin và người đã có gói trả phí không có link hết hạn.
+      if (user.role === Role.Admin || (await this.ownerExempt(user.id))) return [];
+      Object.assign(filter, this.expiredCondition());
+    }
     const docs = await this.model
       .find(filter)
       .sort({ createdAt: -1 })
@@ -514,11 +519,24 @@ export class LinksService {
   async counts(user: AuthUser) {
     const base: Record<string, unknown> = { deletedAt: null };
     if (user.role !== Role.Admin) base.ownerId = user.id;
-    const [active, archived] = await Promise.all([
+    const exempt = user.role === Role.Admin || (await this.ownerExempt(user.id));
+    const [active, archived, expired] = await Promise.all([
       this.model.countDocuments({ ...base, archivedAt: null }),
       this.model.countDocuments({ ...base, archivedAt: { $ne: null } }),
+      exempt ? 0 : this.model.countDocuments({ ...base, archivedAt: null, ...this.expiredCondition() }),
     ]);
-    return { active, archived };
+    return { active, archived, expired };
+  }
+
+  /** Điều kiện Mongo của link Free đã quá hạn: có hạn đã qua, hoặc link cũ chưa gán hạn mà đã quá thời hạn tính từ ngày tạo. */
+  private expiredCondition(): Record<string, unknown> {
+    const now = new Date();
+    return {
+      $or: [
+        { expiresAt: { $lte: now } },
+        { expiresAt: { $exists: false }, createdAt: { $lte: new Date(now.getTime() - this.freeLinkMs()) } },
+      ],
+    };
   }
 
   /** Đổi tiêu đề và/hoặc lưu trữ/khôi phục. Admin sửa được mọi link; người dùng thường chỉ link của mình. */
