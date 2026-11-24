@@ -37,6 +37,16 @@ export class LinksController {
     return this.links.list(user, limit ? Number(limit) || 200 : 200, status === 'archived' ? 'archived' : 'active');
   }
 
+  /** Thống kê lượt bấm: `days` (1-90, mặc định 30), `code` lọc theo một link. */
+  @Get('stats')
+  stats(
+    @CurrentUser() user: AuthUser,
+    @Query('days') days?: string,
+    @Query('code') code?: string,
+  ): Promise<Record<string, unknown>> {
+    return this.links.stats(user, Number(days) || 30, code || undefined);
+  }
+
   /** Số link đang hoạt động / đã lưu trữ. */
   @Get('counts')
   counts(@CurrentUser() user: AuthUser) {

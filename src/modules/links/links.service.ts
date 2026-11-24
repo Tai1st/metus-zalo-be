@@ -13,6 +13,8 @@ import * as bcrypt from 'bcryptjs';
 import { createHash } from 'node:crypto';
 import { Model, Types } from 'mongoose';
 import { Link, LinkDocument } from './schemas/link.schema';
+import { LinkClick, LinkClickDocument } from './schemas/link-click.schema';
+import { parseClick } from './click.util';
 import { FREE_PLAN_CODE, LinkPlansService, periodStart } from './link-plans.service';
 import { LinkDomainsService } from './link-domains.service';
 import { resolveShopee } from './shopee.util';
@@ -73,6 +75,7 @@ const PERIOD_VI = { day: 'ngày', week: 'tuần', month: 'tháng' } as const;
 export class LinksService {
   constructor(
     @InjectModel(Link.name) private readonly model: Model<LinkDocument>,
+    @InjectModel(LinkClick.name) private readonly clicks: Model<LinkClickDocument>,
     private readonly plans: LinkPlansService,
     private readonly domains: LinkDomainsService,
     private readonly config: ConfigService,
@@ -426,6 +429,87 @@ export class LinksService {
     });
   }
 
+  /**
+   * Thống kê lượt bấm của người thật trong `days` ngày gần nhất (tối đa 90). Admin xem toàn hệ thống,
+   * người dùng thường chỉ thấy link của mình; `code` lọc theo một link. Ngày tính theo giờ Việt Nam.
+   */
+  async stats(user: AuthUser, daysIn: number, code?: string): Promise<Record<string, unknown>> {
+    const days = Math.min(Math.max(Math.floor(daysIn) || 30, 1), 90);
+    const TZ = 'Asia/Ho_Chi_Minh';
+    const day = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d); // YYYY-MM-DD
+    const since = new Date(Date.now() - days * 86_400_000);
+    const match: Record<string, unknown> = { at: { $gte: since } };
+    if (user.role !== Role.Admin) match.ownerId = user.id;
+    if (code) {
+      if (user.role !== Role.Admin && !(await this.model.exists({ code, ownerId: user.id }))) {
+        throw new NotFoundException('Không tìm thấy link');
+      }
+      match.code = code;
+    }
+    const group = (field: string, limit = 12) => [
+      { $group: { _id: `$${field}`, clicks: { $sum: 1 } } },
+      { $sort: { clicks: -1 as const } },
+      { $limit: limit },
+    ];
+    const [agg] = await this.clicks.aggregate<{
+      total: { n: number }[];
+      byDay: { _id: string; clicks: number }[];
+      devices: { _id: string; clicks: number }[];
+      os: { _id: string; clicks: number }[];
+      sources: { _id: string; clicks: number }[];
+      countries: { _id: string; clicks: number }[];
+      top: { _id: string; clicks: number }[];
+    }>([
+      { $match: match },
+      {
+        $facet: {
+          total: [{ $count: 'n' }],
+          byDay: [
+            { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$at', timezone: TZ } }, clicks: { $sum: 1 } } },
+          ],
+          devices: group('device'),
+          os: group('os'),
+          sources: group('source'),
+          countries: group('country', 10),
+          top: group('code', 5),
+        },
+      },
+    ]);
+    const recentDocs = await this.clicks
+      .find(match, { _id: 0, code: 1, at: 1, device: 1, os: 1, source: 1, refererHost: 1, country: 1, ua: 1 })
+      .sort({ at: -1 })
+      .limit(50)
+      .lean();
+
+    // Điền đủ mọi ngày trong khoảng (ngày không có lượt bấm = 0).
+    const perDay = new Map((agg?.byDay ?? []).map((d) => [d._id, d.clicks]));
+    const byDay: { date: string; clicks: number }[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const date = day(new Date(Date.now() - i * 86_400_000));
+      byDay.push({ date, clicks: perDay.get(date) ?? 0 });
+    }
+
+    const codes = [...new Set([...(agg?.top ?? []).map((t) => t._id), ...recentDocs.map((r) => r.code)])];
+    const titles = new Map(
+      (await this.model.find({ code: { $in: codes } }, { code: 1, title: 1 }).lean()).map((l) => [l.code, l.title]),
+    );
+    const list = (rows: { _id: string; clicks: number }[] | undefined) =>
+      (rows ?? []).filter((r) => r._id !== '').map((r) => ({ key: r._id, clicks: r.clicks }));
+
+    return {
+      days,
+      total: agg?.total?.[0]?.n ?? 0,
+      today: byDay[byDay.length - 1]?.clicks ?? 0,
+      byDay,
+      devices: list(agg?.devices),
+      os: list(agg?.os),
+      sources: list(agg?.sources),
+      countries: list(agg?.countries),
+      topLinks: (agg?.top ?? []).map((t) => ({ code: t._id, title: titles.get(t._id) ?? '', clicks: t.clicks })),
+      recent: recentDocs.map((r) => ({ ...r, title: titles.get(r.code) ?? '' })),
+    };
+  }
+
   /** Số link đang hoạt động và đã lưu trữ (hiện ở thanh bên). Admin đếm tất cả; người dùng thường đếm link của mình. */
   async counts(user: AuthUser) {
     const base: Record<string, unknown> = { deletedAt: null };
@@ -542,7 +626,12 @@ export class LinksService {
   }
 
   /** Dữ liệu công khai cho trang /s/<code>; `count` tăng bộ đếm lượt bấm. */
-  async resolve(code: string, count: boolean, host?: string): Promise<PublicLink> {
+  async resolve(
+    code: string,
+    count: boolean,
+    host?: string,
+    meta?: { ua?: string; referer?: string; country?: string },
+  ): Promise<PublicLink> {
     const doc = await this.model.findOne({ code, deletedAt: null, archivedAt: null });
     if (!doc) throw new NotFoundException('Link không tồn tại');
     // Link gắn với một domain thì chỉ mở được trên đúng domain đó (bỏ cổng :port khi so sánh).
@@ -585,7 +674,22 @@ export class LinksService {
       }
     }
 
-    if (count) await this.model.updateOne({ _id: doc._id }, { $inc: { clicks: 1 } });
+    if (count) {
+      await this.model.updateOne({ _id: doc._id }, { $inc: { clicks: 1 } });
+      // Ghi lượt bấm cho trang Thống kê (không chờ, lỗi ghi nhật ký không làm hỏng việc chuyển hướng). Không lưu IP.
+      const ua = (meta?.ua ?? '').slice(0, 400);
+      const cc = (meta?.country ?? '').toUpperCase();
+      void this.clicks
+        .create({
+          ownerId: doc.ownerId,
+          code: doc.code,
+          at: new Date(),
+          ...parseClick(ua, meta?.referer),
+          country: /^[A-Z]{2}$/.test(cc) ? cc : '',
+          ua,
+        })
+        .catch(() => undefined);
+    }
     // Link thường có đích là một deeplink của chính hệ thống (tạo tự động từ link TikTok): kèm dữ liệu App Links của deeplink
     // để trang trung gian khai báo thẻ al:* ngay trên đường dẫn được chia sẻ. Facebook chỉ mở thẳng app không cảnh báo
     // khi chính đường dẫn đó có thẻ này; nhảy sang trang deeplink bằng JavaScript thì không đủ.

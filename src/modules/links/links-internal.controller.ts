@@ -22,8 +22,11 @@ export class LinksInternalController {
     @Param('code') code: string,
     @Query('count') count?: string,
     @Query('host') host?: string,
+    @Headers('x-click-ua') ua?: string,
+    @Headers('x-click-referer') referer?: string,
+    @Headers('x-click-country') country?: string,
   ) {
-    return this.links.resolve(code, count === '1', host);
+    return this.links.resolve(code, count === '1', host, { ua, referer, country });
   }
 
   /** Kiểm tra mật khẩu của link được bảo vệ. IP khách do Next chuyển tiếp để giới hạn số lần thử. */

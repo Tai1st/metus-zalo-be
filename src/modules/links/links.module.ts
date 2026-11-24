@@ -13,6 +13,7 @@ import {
 import { LinkOrder, LinkOrderSchema } from './schemas/link-order.schema';
 import { LinkDomain, LinkDomainSchema } from './schemas/link-domain.schema';
 import { LinkImage, LinkImageSchema } from './schemas/link-image.schema';
+import { LinkClick, LinkClickSchema } from './schemas/link-click.schema';
 import { LinkImagesService } from './link-images.service';
 import { LinkImagesController } from './link-images.controller';
 import { LinksService } from './links.service';
@@ -50,6 +51,7 @@ import { LinkAuthGuard } from './link-auth.guard';
       { name: LinkOrder.name, schema: LinkOrderSchema },
       { name: LinkDomain.name, schema: LinkDomainSchema },
       { name: LinkImage.name, schema: LinkImageSchema },
+      { name: LinkClick.name, schema: LinkClickSchema },
     ]),
   ],
   controllers: [
