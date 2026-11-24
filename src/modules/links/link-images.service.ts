@@ -30,8 +30,9 @@ export class LinkImagesService {
       throw new BadRequestException(`Đã đạt tối đa ${MAX_PER_USER} banner`);
     }
     const doc = await this.model.create({ ownerId, mime, data });
-    const base = this.config.get<string>('LINKS_PUBLIC_API_URL', 'https://api-v3.metus.vn').replace(/\/+$/, '');
-    return { url: `${base}/api/public/link-images/${doc.id}` };
+    // Ảnh phục vụ trên tên miền của trang (/api/img/<id>) để người dùng không thấy địa chỉ máy chủ backend.
+    const base = this.config.get<string>('LINKS_PUBLIC_IMG_URL', 'https://link.metus.vn').replace(/\/+$/, '');
+    return { url: `${base}/api/img/${doc.id}` };
   }
 
   async get(id: string) {
