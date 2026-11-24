@@ -321,7 +321,11 @@ export class LinksService {
   }
 
   /** Admin xem tất cả; người dùng thường chỉ xem link của mình. */
-  async list(user: AuthUser, limit = 200, status: 'active' | 'archived' = 'active') {
+  async list(
+    user: AuthUser,
+    limit = 200,
+    status: 'active' | 'archived' = 'active',
+  ): Promise<Record<string, unknown>[]> {
     const filter: Record<string, unknown> = {
       deletedAt: null,
       archivedAt: status === 'archived' ? { $ne: null } : null,
@@ -332,7 +336,17 @@ export class LinksService {
       .sort({ createdAt: -1 })
       .limit(Math.min(Math.max(limit, 1), 500));
     const rows = docs.map((d) => d.toJSON());
-    if (user.role !== Role.Admin) return rows;
+    if (user.role !== Role.Admin) {
+      // Kèm hạn dùng hiệu lực và cờ hết hạn của gói Free để giao diện cảnh báo (link cũ chưa gán hạn thì tính từ ngày tạo).
+      const exempt = await this.ownerExempt(user.id);
+      const now = Date.now();
+      return rows.map((r) => {
+        const own = (r as { expiresAt?: Date | null }).expiresAt;
+        const created = new Date((r as unknown as { createdAt: string }).createdAt).getTime();
+        const eff = exempt ? null : own !== undefined ? own : new Date(created + this.freeLinkMs());
+        return { ...r, expiresAt: eff, expired: !!eff && new Date(eff).getTime() <= now };
+      });
+    }
 
     // Admin: kèm tên đăng nhập và họ tên của chủ sở hữu để khỏi phải tra mã.
     const ids = [...new Set(rows.map((r) => r.ownerId).filter(Boolean))].flatMap((id) =>
@@ -432,6 +446,10 @@ export class LinksService {
     if (!doc) throw new NotFoundException('Không tìm thấy link');
     if (user.role !== Role.Admin && doc.ownerId !== user.id) {
       throw new ForbiddenException('Không có quyền xóa link này');
+    }
+    // Gói Free không xóa được link (link tự hết hạn sau vài ngày); nâng cấp gói để xóa.
+    if (user.role !== Role.Admin && (await this.plans.planFor(user.id)).plan.code === FREE_PLAN_CODE) {
+      throw new ForbiddenException('Gói Miễn phí không xóa được link, hãy nâng cấp gói');
     }
     doc.deletedAt = new Date();
     await doc.save();

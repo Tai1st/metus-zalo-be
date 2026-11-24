@@ -33,7 +33,7 @@ export class LinksController {
     @CurrentUser() user: AuthUser,
     @Query('limit') limit?: string,
     @Query('status') status?: string,
-  ) {
+  ): Promise<Record<string, unknown>[]> {
     return this.links.list(user, limit ? Number(limit) || 200 : 200, status === 'archived' ? 'archived' : 'active');
   }
 
