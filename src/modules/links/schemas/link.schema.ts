@@ -30,6 +30,13 @@ export class Link {
   @Prop({ default: '', lowercase: true, trim: true })
   domain: string;
 
+  /**
+   * Hạn dùng của link tạo bằng gói Free (mặc định 3 ngày kể từ lúc tạo). `null` = không hết hạn (gói trả phí, admin hoặc đã nâng cấp);
+   * không có trường này = link cũ, được gán hạn ở lần mở đầu tiên.
+   */
+  @Prop({ type: Date })
+  expiresAt?: Date | null;
+
   @Prop({ default: '', trim: true })
   title: string;
 

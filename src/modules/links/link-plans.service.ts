@@ -180,11 +180,13 @@ export class LinkPlansService implements OnModuleInit {
     if (expiresAt && expiresAt.getTime() <= Date.now()) {
       throw new BadRequestException('Ngày hết hạn phải ở tương lai');
     }
-    return this.memberships.findOneAndUpdate(
+    const m = await this.memberships.findOneAndUpdate(
       { userId: dto.userId },
       { planCode: dto.planCode.toLowerCase(), expiresAt },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
+    await this.unlockOwnerLinks(dto.userId, dto.planCode.toLowerCase());
+    return m;
   }
 
   /**
@@ -197,11 +199,21 @@ export class LinkPlansService implements OnModuleInit {
     const stillValid = !!cur && (!cur.expiresAt || cur.expiresAt.getTime() > Date.now());
     const base =
       stillValid && cur.planCode === code && cur.expiresAt ? cur.expiresAt : new Date();
-    return this.memberships.findOneAndUpdate(
+    const m = await this.memberships.findOneAndUpdate(
       { userId },
       { planCode: code, expiresAt: addMonths(base, months) },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
+    await this.unlockOwnerLinks(userId, code);
+    return m;
+  }
+
+  /** Nâng cấp lên gói trả phí: mọi link của người dùng hết giới hạn hạn dùng của gói Free (kể cả link đã hết hạn). */
+  private async unlockOwnerLinks(userId: string, planCode: string) {
+    if (planCode === FREE_PLAN_CODE) return;
+    await this.memberships.db
+      .collection('links')
+      .updateMany({ ownerId: userId, expiresAt: { $ne: null } }, { $set: { expiresAt: null } });
   }
 
   async getByCode(code: string) {

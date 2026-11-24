@@ -47,6 +47,8 @@ export type PublicLink = {
   appLinks?: { androidUrl: string; iosUrl: string; webUrl: string };
   /** Dấu vân tay của mật khẩu hiện tại: đổi mật khẩu thì đổi, để vô hiệu cookie mở khóa cũ. */
   lockId: string;
+  /** Link của gói Free đã quá hạn dùng: trang công khai hiện thông báo nâng cấp, không chuyển hướng. */
+  expired?: boolean;
   geoRules: { country: string; region?: string; url: string }[];
   deviceRules: { device: string; url: string }[];
   langRules: { lang: string; url: string }[];
@@ -154,8 +156,9 @@ export class LinksService {
 
     // Chọn và kiểm tra domain theo gói trước khi làm việc nặng (gọi TikTok).
     const domain = await this.domains.pickForNewLink(user, dto.domain);
+    const expiresAt = await this.newLinkExpiry(user);
 
-    if (dto.mode === 'normal') return this.createNormal(user, dto, domain);
+    if (dto.mode === 'normal') return this.createNormal(user, dto, domain, expiresAt);
 
     const input = dto.url.trim();
     if (!isTikTokUrl(input)) {
@@ -203,6 +206,7 @@ export class LinksService {
       image: target.image,
       ownerId: user.id,
       domain,
+      expiresAt,
     });
   }
 
@@ -210,7 +214,7 @@ export class LinksService {
    * Rút gọn link thường: đích là đường dẫn http/https bất kỳ. Server KHÔNG tải trang đích (tránh bị lợi dụng
    * truy cập địa chỉ nội bộ); chỉ kiểm tra cú pháp và chặn đích nguy hiểm.
    */
-  private async createNormal(user: AuthUser, dto: CreateLinkDto, domain: string) {
+  private async createNormal(user: AuthUser, dto: CreateLinkDto, domain: string, expiresAt: Date | null) {
     const selfHosts = [...(await this.domains.allHosts()), 'link.metus.vn'];
     let href: string;
     try {
@@ -275,6 +279,7 @@ export class LinksService {
       image,
       ownerId: user.id,
       domain,
+      expiresAt,
       ...extras,
       }, alias);
       return chained ? { ...saved, deeplinkCode: chained.code as string } : saved;
@@ -433,6 +438,30 @@ export class LinksService {
     return { ok: true };
   }
 
+  /** Số ngày link của gói Free còn dùng được (đặt LINKS_FREE_LINK_DAYS để đổi). */
+  private freeLinkMs(): number {
+    const days = Number(this.config.get<string>('LINKS_FREE_LINK_DAYS', '3'));
+    return (Number.isFinite(days) && days > 0 ? days : 3) * 86_400_000;
+  }
+
+  /** Chủ link không bị giới hạn hạn dùng: admin hoặc đang có gói trả phí còn hiệu lực. */
+  private async ownerExempt(ownerId: string): Promise<boolean> {
+    if (Types.ObjectId.isValid(ownerId)) {
+      const u = await this.model.db
+        .collection('users')
+        .findOne({ _id: new Types.ObjectId(ownerId) }, { projection: { role: 1 } });
+      if (u?.role === Role.Admin) return true;
+    }
+    return (await this.plans.planFor(ownerId)).plan.code !== FREE_PLAN_CODE;
+  }
+
+  /** Hạn dùng cho link mới của người dùng này: null nếu admin hoặc gói trả phí, ngược lại hạn của gói Free. */
+  private async newLinkExpiry(user: AuthUser): Promise<Date | null> {
+    if (user.role === Role.Admin) return null;
+    const { plan } = await this.plans.planFor(user.id);
+    return plan.code === FREE_PLAN_CODE ? new Date(Date.now() + this.freeLinkMs()) : null;
+  }
+
   /** Dữ liệu công khai cho trang /s/<code>; `count` tăng bộ đếm lượt bấm. */
   async resolve(code: string, count: boolean, host?: string): Promise<PublicLink> {
     const doc = await this.model.findOne({ code, deletedAt: null, archivedAt: null });
@@ -442,6 +471,41 @@ export class LinksService {
     if (doc.domain && reqHost && reqHost !== doc.domain) {
       throw new NotFoundException('Link không tồn tại');
     }
+
+    // Hết hạn dùng của link Free. Link cũ chưa có trường này được gán hạn (tính từ ngày tạo) ở lần mở đầu tiên.
+    let expiresAt = doc.expiresAt;
+    if (expiresAt === undefined) {
+      expiresAt = (await this.ownerExempt(doc.ownerId))
+        ? null
+        : new Date(((doc as unknown as { createdAt?: Date }).createdAt ?? doc._id.getTimestamp()).getTime() + this.freeLinkMs());
+      await this.model.updateOne({ _id: doc._id, expiresAt: { $exists: false } }, { $set: { expiresAt } });
+    }
+    if (expiresAt && expiresAt.getTime() <= Date.now()) {
+      // Chủ link đã nâng cấp sau khi gán hạn thì mở lại vĩnh viễn.
+      if (await this.ownerExempt(doc.ownerId)) {
+        await this.model.updateOne({ _id: doc._id }, { $set: { expiresAt: null } });
+      } else {
+        return {
+          code: doc.code,
+          kind: doc.kind,
+          title: doc.title,
+          description: '',
+          redirectType: 'direct',
+          image: '',
+          webUrl: '',
+          androidUrl: '',
+          iosUrl: '',
+          hasPassword: false,
+          lockId: '',
+          geoRules: [],
+          deviceRules: [],
+          langRules: [],
+          params: [],
+          expired: true,
+        };
+      }
+    }
+
     if (count) await this.model.updateOne({ _id: doc._id }, { $inc: { clicks: 1 } });
     // Link thường có đích là một deeplink của chính hệ thống (tạo tự động từ link TikTok): kèm dữ liệu App Links của deeplink
     // để trang trung gian khai báo thẻ al:* ngay trên đường dẫn được chia sẻ. Facebook chỉ mở thẳng app không cảnh báo
