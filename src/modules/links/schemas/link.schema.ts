@@ -30,6 +30,10 @@ export class Link {
   @Prop({ default: '', lowercase: true, trim: true })
   domain: string;
 
+  /** Deeplink Shopee: link Shopee gốc người dùng nhập (s.shopee.vn/…); /<mã> chuyển 301 thẳng tới đây. */
+  @Prop({ default: '' })
+  sourceUrl?: string;
+
   /**
    * Hạn dùng của link tạo bằng gói Free (mặc định 3 ngày kể từ lúc tạo). `null` = không hết hạn (gói trả phí, admin hoặc đã nâng cấp);
    * không có trường này = link cũ, được gán hạn ở lần mở đầu tiên.

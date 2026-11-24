@@ -48,6 +48,8 @@ export type PublicLink = {
   appLinks?: { androidUrl: string; iosUrl: string; webUrl: string };
   /** Dấu vân tay của mật khẩu hiện tại: đổi mật khẩu thì đổi, để vô hiệu cookie mở khóa cũ. */
   lockId: string;
+  /** Deeplink Shopee: link Shopee gốc, /<mã> chuyển 301 thẳng tới đây. */
+  sourceUrl?: string;
   /** Link của gói Free đã quá hạn dùng: trang công khai hiện thông báo nâng cấp, không chuyển hướng. */
   expired?: boolean;
   geoRules: { country: string; region?: string; url: string }[];
@@ -253,6 +255,7 @@ export class LinksService {
     }
     return this.saveWithCode({
       kind: 'shopee' as const,
+      sourceUrl: dto.url.trim(),
       webUrl: t.webUrl,
       appLink: t.appLink,
       productId: '',
@@ -607,6 +610,7 @@ export class LinksService {
       redirectType: doc.redirectType ?? 'interstitial',
       image: doc.image,
       webUrl: doc.webUrl,
+      ...(doc.kind === 'shopee' && { sourceUrl: doc.sourceUrl || doc.webUrl }),
       androidUrl: doc.appLink,
       // Deeplink Shopee dùng nguyên địa chỉ app; deeplink TikTok bọc qua onelink cho iOS.
       iosUrl: doc.kind === 'shopee' ? doc.appLink : doc.appLink ? buildOnelink(doc.appLink) : '',
